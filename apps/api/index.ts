@@ -4,6 +4,7 @@ import { AuthInput } from "./types";
 import jwt from "jsonwebtoken"
 import { authMiddleware } from "./middleware";
 import type { Request, Response } from "express";
+import bcrypt from "bcrypt"
 
 const app = express();
 app.use(express.json())
@@ -18,11 +19,12 @@ app.post('/user/signup',async (req:Request,res:Response) => {
         }
         const username= data?.data?.username!
         const password = data?.data?.password!
+        const hashedPassword = await bcrypt.hash(password , 2)
 
         const user = await prisma.user.create({
             data:{
                 username,
-                password
+                password:hashedPassword
             }
         })
 
@@ -36,25 +38,31 @@ app.post('/user/signup',async (req:Request,res:Response) => {
 
 
 //  signin endpoint 
-
 app.post ("/user/signin",async (req:Request,res:Response) => { 
     try {
         const data = AuthInput.safeParse(req.body)
         if(!data.success) res.status(403).json({message: " data was in incorrect format"})
-
         const user = await prisma.user.findFirst({
-            where : {
-                username : data.data?.username,
-                password: data.data?.password
+            where:{
+                username:data.data?.username
+            },
+            select:{
+                id:true,
+                password:true
             }
         })
+        
+        if(!user?.password)res.status(401).json({message:"username was incorrect"})
+        bcrypt.compare(data.data?.password as string , user?.password as string , async (err,  result) => { 
+             if(!result) res.status(401).json({"message":"password was incorrect"})
+            
+         })
 
-        if(!user)res.status(401).json({message:"username or password was incorrect"})
 
         const jwtToken = jwt.sign({
             id:user?.id
         },process.env.JWT_SECRET!)
-
+        
         res.json({
             jwt:jwtToken
         })
@@ -69,10 +77,11 @@ app.post ("/user/signin",async (req:Request,res:Response) => {
 // endpoint to add website 
 app.post("/website",authMiddleware,async(req:Request,res:Response) => { 
     if(!req.body.url){
-        res.status(411).json({});
+        res.status(411).json({message:"url wasn't provided"});
         return;
     }
-    const user_id = req.user_id!
+    console.log("body of the request to /website: ", req.body)
+    const user_id = req.body.user_id!
 
     const website = await prisma.website.create({
         data:{
@@ -104,6 +113,8 @@ app.get("/status/:websiteId", authMiddleware,async(req:Request,res:Response) => 
         })
 
         if(!websiteInfo) res.json({message: "couldn't find the website info"})
+
+        res.json({websiteInfo})
     } catch (error) {
         
     }

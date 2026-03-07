@@ -2,8 +2,9 @@
   "name": "api",
   "module": "index.ts",
   "type": "module",
-  "scripts":{
-    "test":"vitest"
+  "scripts": {
+    "test": "vitest",
+    "dev": "bun index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -13,8 +14,10 @@
   },
   "dependencies": {
     "@repo/db": "workspace:*",
+    "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
+    "bcrypt": "^6.0.0",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "zod": "^4.3.6"
