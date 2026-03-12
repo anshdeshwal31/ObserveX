@@ -80,8 +80,8 @@ app.post("/website",authMiddleware,async(req:Request,res:Response) => {
         res.status(411).json({message:"url wasn't provided"});
         return;
     }
-    console.log("body of the request to /website: ", req.body)
-    const user_id = req.body.user_id!
+    // console.log("body of the request to /website: ", req.body)
+    const user_id = req.user_id!
 
     const website = await prisma.website.create({
         data:{

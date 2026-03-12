@@ -14,8 +14,8 @@ const client = await createClient()
         .on("error", (err) => console.log("Redis Client Error", err))
         .connect();
 
-export const addToStream2 = async (website:websiteType , status:string , response_time_ms:number , region_id:string  ) => { 
-    const res = await client.xAdd('observeX:websiteResponse', '*',{
+export const addToWebsiteInfoList = async (website:websiteType , status:string , response_time_ms:number , region_id:string  ) => { 
+    const res = await client.xAdd('pingNova:websiteResponse', '*',{
         websiteUrl : website.message.url,
         websiteId : website.message.id , 
         status ,

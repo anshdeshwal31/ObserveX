@@ -1,5 +1,5 @@
 {
-  "name": "ObserveX",
+  "name": "PingNova",
   "private": true,
   "scripts": {
     "build": "turbo run build",

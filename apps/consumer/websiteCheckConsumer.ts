@@ -1,6 +1,6 @@
 import { createClient } from "redis";
 import axios from "axios";
-import { addToStream2 } from "../producer/producer2";
+import { addToWebsiteInfoList } from "../producer/websiteInfoProducer";
 
 type Stream1Message = {
   id: string;
@@ -18,7 +18,7 @@ type StreamReadReply<T> = Array<{
 async function ensureGroup(client: ReturnType<typeof createClient>) {
   try {
     // Create group once; if already exists, Redis throws BUSYGROUP.
-    await client.xGroupCreate("observeX:website", "usa", "0", {
+    await client.xGroupCreate("pingNova:website", "usa", "0", {
       MKSTREAM: true
     });
   } catch (err) {
@@ -40,12 +40,12 @@ async function main() {
       "usa",
       "us-1",
       {
-        key: "observeX:website",
+        key: "pingNova:website",
         id: ">"
       },
       {
         COUNT: 10,
-        BLOCK: 5000
+        BLOCK: 0
       }
     );
 
@@ -56,17 +56,18 @@ async function main() {
     const streams = res as unknown as StreamReadReply<Stream1Message> | null;
     const websites = streams?.[0]?.messages ?? [];
     const ackIds: string[] = [];
-
+    console.log({websites})
     for (const website of websites) {
       const startTime = Date.now();
 
       try {
         await axios.get(website.message.url);
-        await addToStream2(website, "Up", Date.now() - startTime, "usa");
+        await addToWebsiteInfoList(website, "Up", Date.now() - startTime, "a88b2cf2-5bb8-4306-86e9-1bf98ab33097");
         ackIds.push(website.id);
-      } catch {
+      } catch(error) {
+        console.log({error})
         try {
-          await addToStream2(website, "Down", -1, "usa");
+          await addToWebsiteInfoList(website, "Down", -1, "a88b2cf2-5bb8-4306-86e9-1bf98ab33097");
           ackIds.push(website.id);
         } catch {
           // If stream2 push fails, do not ack so message can be retried.
@@ -75,7 +76,7 @@ async function main() {
     }
 
     if (ackIds.length > 0) {
-      await client.xAck("observeX:website", "usa", ackIds);
+      await client.xAck("pingNova:website", "a88b2cf2-5bb8-4306-86e9-1bf98ab33097", ackIds);
     }
   }
 }

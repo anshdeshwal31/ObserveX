@@ -7,15 +7,14 @@ export const authMiddleware = (req: Request,res: Response, next: NextFunction
 
     const jwtToken = req.headers.authorization as string;
 
-    // console.log({jwtToken})
-
-    const { _id } = jwt.verify(
+    const {id}  = jwt.verify(
       jwtToken,
       process.env.JWT_SECRET!
     ) as JwtPayload;
 
+
     // attach to request
-    (req as any).user_id = _id;
+    (req as any).user_id = id;
 
     next();
 
