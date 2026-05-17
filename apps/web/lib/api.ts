@@ -1,11 +1,8 @@
-import { getToken } from "./auth";
+// lib/api.ts
+// Updated for Clerk Authentication
 
-const API_BASE_URL = "http://localhost:3000";
-
-type AuthPayload = {
-  username: string;
-  password: string;
-};
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 type WebsiteStatus = "Up" | "Down" | "Unknown";
 
@@ -39,68 +36,43 @@ async function parseJson<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-export async function signup(payload: AuthPayload): Promise<{ id: string }> {
-  const response = await fetch(`${API_BASE_URL}/user/signup`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  return parseJson<{ id: string }>(response);
-}
-
-export async function signin(payload: AuthPayload): Promise<{ jwt: string }> {
-  const response = await fetch(`${API_BASE_URL}/user/signin`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  return parseJson<{ jwt: string }>(response);
-}
-
-export async function addWebsite(url: string): Promise<{ id: string }> {
-  const token = getToken();
-
-  if (!token) {
-    throw new Error("You are not signed in.");
-  }
+export async function addWebsite(url: string, token: string): Promise<{ id: string }> {
+  if (!token) throw new Error("You are not signed in.");
 
   const response = await fetch(`${API_BASE_URL}/website`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: token,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ url }),
   });
-
   return parseJson<{ id: string }>(response);
 }
 
-export async function getWebsiteStatus(websiteId: string): Promise<WebsiteInfo | null> {
-  const token = getToken();
+/** Fetch all websites for the signed-in user from the API. */
+export async function getWebsites(token: string): Promise<WebsiteInfo[]> {
+  if (!token) throw new Error("You are not signed in.");
 
-  if (!token) {
-    throw new Error("You are not signed in.");
-  }
+  const response = await fetch(`${API_BASE_URL}/websites`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const data = await parseJson<{ websites: WebsiteInfo[] }>(response);
+  return data.websites;
+}
+
+export async function getWebsiteStatus(websiteId: string, token: string): Promise<WebsiteInfo | null> {
+  if (!token) throw new Error("You are not signed in.");
 
   const response = await fetch(`${API_BASE_URL}/status/${websiteId}`, {
     method: "GET",
-    headers: {
-      Authorization: token,
-    },
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   const data = await parseJson<{ websiteInfo?: WebsiteInfo; message?: string }>(response);
 
-  if (!data.websiteInfo) {
-    return null;
-  }
-
+  if (!data.websiteInfo) return null;
   return data.websiteInfo;
 }

@@ -1,5 +1,6 @@
 
 import Link from "next/link";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { PillNav } from "./reactbits/pill-nav";
 import { StarBorder } from "./reactbits/star-border";
 
@@ -28,17 +29,24 @@ export function Navbar() {
         initialLoadAnimation={false}
         logoText="PingNova"
       />
-      <StarBorder
-        as={Link}
-        href="/auth"
-        color="#f0cc9f"
-        speed="5s"
-        thickness={1}
-        className="shrink-0"
-        innerClassName="rounded-full bg-[#111113] px-4 py-2 text-sm font-semibold text-[#f7f1e8]"
-      >
-        Open App <span aria-hidden>→</span>
-      </StarBorder>
+      <SignedOut>
+        <StarBorder
+          as={Link}
+          href="/auth"
+          color="#f0cc9f"
+          speed="5s"
+          thickness={1}
+          className="shrink-0"
+          innerClassName="rounded-full bg-[#111113] px-4 py-2 text-sm font-semibold text-[#f7f1e8]"
+        >
+          Open App <span aria-hidden>→</span>
+        </StarBorder>
+      </SignedOut>
+      <SignedIn>
+        <div className="shrink-0 rounded-full bg-[#111113] p-1 border border-white/12">
+          <UserButton />
+        </div>
+      </SignedIn>
     </header>
   );
 }

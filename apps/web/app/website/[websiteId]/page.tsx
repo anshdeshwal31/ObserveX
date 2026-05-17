@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import { getWebsiteStatus, type WebsiteInfo, type WebsiteTick } from "../../../lib/api";
-import { getToken } from "../../../lib/auth";
 
 function UptimeBar({ ticks }: { ticks: WebsiteTick[] }) {
   const visible = ticks.slice(0, 40);
@@ -31,27 +31,22 @@ function UptimeBar({ ticks }: { ticks: WebsiteTick[] }) {
 export default function WebsiteDetailPage() {
   const params = useParams<{ websiteId: string }>();
   const websiteId = typeof params.websiteId === "string" ? params.websiteId : "";
+  const { getToken, isLoaded, userId } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [website, setWebsite] = useState<WebsiteInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/auth");
-      return;
-    }
-
-    if (!websiteId) {
-      setError("Website ID is missing from the route.");
-      setLoading(false);
-      return;
-    }
+    if (!isLoaded || !userId || !websiteId) return;
 
     async function load() {
       try {
-        const result = await getWebsiteStatus(websiteId);
-        setWebsite(result);
+        const token = await getToken();
+        if (token) {
+          const result = await getWebsiteStatus(websiteId, token);
+          setWebsite(result);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to fetch website data.");
       } finally {
@@ -60,7 +55,7 @@ export default function WebsiteDetailPage() {
     }
 
     void load();
-  }, [websiteId, router]);
+  }, [isLoaded, userId, websiteId, getToken]);
 
   const latestTick = useMemo(() => website?.ticks?.[0] ?? null, [website]);
 

@@ -2,6 +2,12 @@
   "name": "producer",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "dev:list": "bun --watch websiteListProducer.ts",
+    "dev:info": "bun --watch websiteInfoProducer.ts",
+    "start:list": "bun websiteListProducer.ts",
+    "start:info": "bun websiteInfoProducer.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -9,6 +15,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@repo/db": "workspace:*",
     "redis": "^5.11.0"
   }
 }

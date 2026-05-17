@@ -3,57 +3,50 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { addWebsite, getWebsiteStatus } from "../../lib/api";
-import { clearToken, getToken } from "../../lib/auth";
+import { useAuth } from "@clerk/nextjs";
+import { addWebsite, getWebsites, getWebsiteStatus, type WebsiteInfo } from "../../lib/api";
 import { StarBorder } from "../components/reactbits/star-border";
 
-const STORAGE_KEY = "pn_websites";
-
-type LocalWebsite = {
-  id: string;
-  url: string;
-  createdAt: string;
-};
-
 type StatusMap = Record<string, { status: "Up" | "Down" | "Unknown"; responseMs?: number }>;
-
-function loadWebsites(): LocalWebsite[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as LocalWebsite[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveWebsites(list: LocalWebsite[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-}
 
 export default function DashboardPage() {
   const [url, setUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [websites, setWebsites] = useState<LocalWebsite[]>([]);
+  const [websites, setWebsites] = useState<WebsiteInfo[]>([]);
   const [statuses, setStatuses] = useState<StatusMap>({});
+  const [loadingWebsites, setLoadingWebsites] = useState(true);
+  const { getToken, isLoaded, userId } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/auth");
-      return;
-    }
-    setWebsites(loadWebsites());
-  }, [router]);
+    if (!isLoaded || !userId) return;
 
-  const fetchStatuses = useCallback(async (sites: LocalWebsite[]) => {
+    // Load websites from API
+    (async () => {
+      try {
+        const token = await getToken();
+        if (token) {
+          const sites = await getWebsites(token);
+          setWebsites(sites);
+        }
+      } catch {
+        setMessage("Could not load your websites. Please refresh.");
+      } finally {
+        setLoadingWebsites(false);
+      }
+    })();
+  }, [isLoaded, userId, getToken]);
+
+  const fetchStatuses = useCallback(async (sites: WebsiteInfo[]) => {
     const results: StatusMap = {};
+    const token = await getToken();
+    if (!token) return;
+
     await Promise.allSettled(
       sites.map(async (site) => {
         try {
-          const info = await getWebsiteStatus(site.id);
+          const info = await getWebsiteStatus(site.id, token);
           const tick = info?.ticks?.[0];
           results[site.id] = {
             status: (tick?.status as "Up" | "Down") ?? "Unknown",
@@ -65,7 +58,7 @@ export default function DashboardPage() {
       }),
     );
     setStatuses(results);
-  }, []);
+  }, [getToken]);
 
   useEffect(() => {
     if (websites.length > 0) {
@@ -85,17 +78,19 @@ export default function DashboardPage() {
     setMessage(null);
 
     try {
-      const result = await addWebsite(url.trim());
-      const next: LocalWebsite[] = [
-        {
-          id: result.id,
-          url: url.trim(),
-          createdAt: new Date().toISOString(),
-        },
-        ...websites,
-      ];
-      setWebsites(next);
-      saveWebsites(next);
+      const token = await getToken();
+      if (!token) throw new Error("Authentication failed.");
+
+      const result = await addWebsite(url.trim(), token);
+      // Optimistically prepend the new website; API data will reflect on next load
+      const newSite: WebsiteInfo = {
+        id: result.id,
+        url: url.trim(),
+        user_id: userId || "",
+        time_added: new Date().toISOString(),
+        ticks: [],
+      };
+      setWebsites((prev) => [newSite, ...prev]);
       setUrl("");
       setMessage("Website added. Monitoring will begin shortly.");
     } catch (error) {
@@ -110,9 +105,7 @@ export default function DashboardPage() {
   }
 
   function onSignOut() {
-    clearToken();
-    window.localStorage.removeItem(STORAGE_KEY);
-    router.push("/auth");
+    // Legacy onSignOut removed. Use UserButton or clerk.signOut()
   }
 
   const upCount = Object.values(statuses).filter((s) => s.status === "Up").length;
@@ -181,19 +174,14 @@ export default function DashboardPage() {
       </article>
 
       <div className="space-y-3">
-        {websites.length === 0 ? (
+        {loadingWebsites ? (
           <article className="grid place-items-center rounded-[20px] border border-white/12 bg-white/8 p-7 text-center backdrop-blur-xl">
-            <svg
-              width="32"
-              height="32"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="mb-3 text-[#ece3d78f]"
-            >
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-[#f0cc9f]" />
+            <p className="mt-3 text-[#ece3d7bf]">Loading your websites…</p>
+          </article>
+        ) : websites.length === 0 ? (
+          <article className="grid place-items-center rounded-[20px] border border-white/12 bg-white/8 p-7 text-center backdrop-blur-xl">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-3 text-[#ece3d78f]">
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -230,7 +218,7 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-base font-medium text-[#f7f1e8]">{website.url}</p>
                     <div className="mt-1 flex items-center gap-3 text-sm text-[#ece3d7bf]">
-                      <span>{new Date(website.createdAt).toLocaleDateString()}</span>
+                      <span>{new Date(website.time_added).toLocaleDateString()}</span>
                       {s?.responseMs !== undefined && (
                         <span>{s.responseMs} ms</span>
                       )}

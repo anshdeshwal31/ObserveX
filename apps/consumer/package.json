@@ -2,6 +2,12 @@
   "name": "consumer",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "dev:check": "bun --watch websiteCheckConsumer.ts",
+    "dev:bulk": "bun --watch bulkUploadConsumer.ts",
+    "start:check": "bun websiteCheckConsumer.ts",
+    "start:bulk": "bun bulkUploadConsumer.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -9,6 +15,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@repo/db": "workspace:*",
     "axios": "^1.13.6",
     "redis": "^5.11.0"
   }

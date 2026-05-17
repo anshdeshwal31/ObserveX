@@ -1,125 +1,100 @@
+import { clerkMiddleware } from '@clerk/express'
 import express from "express"
+import cors from "cors"
 import {prisma} from "@repo/db"
-import { AuthInput } from "./types";
-import jwt from "jsonwebtoken"
 import { authMiddleware } from "./middleware";
 import type { Request, Response } from "express";
 import bcrypt from "bcrypt"
+import { isValidUrl } from "./utils";
 
 const app = express();
+
+// CORS — allow requests from the frontend origin
+app.use(cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:3001",
+    credentials: true,
+}));
+
 app.use(express.json())
+app.use(clerkMiddleware())
 
-// signup endpoint
-app.post('/user/signup',async (req:Request,res:Response) => { 
+// Auth handled by Clerk. Signup/Signin routes removed.
+
+// ─── GET all websites for the authenticated user ──────────────────────────────
+app.get("/websites", authMiddleware, async (req: Request, res: Response) => {
     try {
-        
-        const data = AuthInput.safeParse(req.body);
-        if(!data.success){
-            res.status(403).json({message:"data was in incorrect format"})
-        }
-        const username= data?.data?.username!
-        const password = data?.data?.password!
-        const hashedPassword = await bcrypt.hash(password , 2)
-
-        const user = await prisma.user.create({
-            data:{
-                username,
-                password:hashedPassword
-            }
-        })
-
-        res.json({id:user.id})
-
+        const websites = await prisma.website.findMany({
+            where: { user_id: req.user_id! },
+            orderBy: { time_added: "desc" }
+        });
+        res.json({ websites });
     } catch (error) {
-        console.log({error})
-        res.json({error})
+        console.error("[GET /websites]", error);
+        res.status(500).json({ message: "Internal server error." });
     }
- })
+});
 
+// ─── add website ─────────────────────────────────────────────────────────────
+app.post("/website", authMiddleware, async (req: Request, res: Response) => {
+    const { url } = req.body;
 
-//  signin endpoint 
-app.post ("/user/signin",async (req:Request,res:Response) => { 
-    try {
-        const data = AuthInput.safeParse(req.body)
-        if(!data.success) res.status(403).json({message: " data was in incorrect format"})
-        const user = await prisma.user.findFirst({
-            where:{
-                username:data.data?.username
-            },
-            select:{
-                id:true,
-                password:true
-            }
-        })
-        
-        if(!user?.password)res.status(401).json({message:"username was incorrect"})
-        bcrypt.compare(data.data?.password as string , user?.password as string , async (err,  result) => { 
-             if(!result) res.status(401).json({"message":"password was incorrect"})
-            
-         })
-
-
-        const jwtToken = jwt.sign({
-            id:user?.id
-        },process.env.JWT_SECRET!)
-        
-        res.json({
-            jwt:jwtToken
-        })
-        
-    } catch (error) {
-        console.log({error})
-        res.json({error})
-    }
-
- })
-
-// endpoint to add website 
-app.post("/website",authMiddleware,async(req:Request,res:Response) => { 
-    if(!req.body.url){
-        res.status(411).json({message:"url wasn't provided"});
+    if (!url) {
+        res.status(400).json({ message: "url is required." });
         return;
     }
-    // console.log("body of the request to /website: ", req.body)
-    const user_id = req.user_id!
 
-    const website = await prisma.website.create({
-        data:{
-            url:req.body.url,
-            user_id
-        }
-    })
+    if (!isValidUrl(url)) {
+        res.status(400).json({ message: "url must be a valid http/https URL." });
+        return;
+    }
 
-    res.json({id:website.id})
- })
-
-
-//  endpoint to get the info of the website 
-app.get("/status/:websiteId", authMiddleware,async(req:Request,res:Response) => { 
     try {
-        const websiteInfo  = await prisma.website.findFirst({
-            where:{
-                user_id:req.body.user_id,
-                id:Array.isArray(req.params.websiteId)?req.params.websiteId[0]:req.params.websiteId
+        const website = await prisma.website.create({
+            data: {
+                url,
+                user_id: req.user_id!
+            }
+        });
+        res.status(201).json({ id: website.id });
+    } catch (error) {
+        console.error("[POST /website]", error);
+        res.status(500).json({ message: "Internal server error." });
+    }
+});
+
+// ─── get website status ───────────────────────────────────────────────────────
+app.get("/status/:websiteId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const websiteId = Array.isArray(req.params.websiteId)
+            ? req.params.websiteId[0]!
+            : req.params.websiteId;
+
+        const websiteInfo = await prisma.website.findFirst({
+            where: {
+                user_id: req.user_id!,    // ← fixed: was req.body.user_id (always undefined on GET)
+                id: websiteId
             },
-            include :{
-                ticks:{
-                    orderBy:[{
-                        created_at:'desc'
-                    }],
-                    take:1
+            include: {
+                ticks: {
+                    orderBy: [{ created_at: "desc" }],
+                    take: 50               // return last 50 ticks for the detail page
                 }
             }
-        })
+        });
 
-        if(!websiteInfo) res.json({message: "couldn't find the website info"})
+        if (!websiteInfo) {
+            res.status(404).json({ message: "Website not found." });
+            return;                        // ← fixed: missing return caused double-response
+        }
 
-        res.json({websiteInfo})
+        res.json({ websiteInfo });
+
     } catch (error) {
-        
+        console.error("[GET /status/:websiteId]", error);
+        res.status(500).json({ message: "Internal server error." });
     }
-})
+});
 
-app.listen(process.env.PORT || 3000 , () => { 
-console.log("application is running")
-})
+app.listen(process.env.PORT || 3000, () => {
+    console.log(`API running on port ${process.env.PORT || 3000}`);
+});

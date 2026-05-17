@@ -2,6 +2,11 @@ import { createClient } from "redis";
 import axios from "axios";
 import { addToWebsiteInfoList } from "../producer/websiteInfoProducer";
 
+const STREAM_KEY = "pingNova:website";
+const GROUP_NAME = "usa";           // must match the group used in xAck
+const CONSUMER_NAME = "us-1";
+const REGION_ID = process.env.REGION_ID!; // injected via env — must be a valid Region.id in the DB
+
 type Stream1Message = {
   id: string;
   message: {
@@ -17,8 +22,7 @@ type StreamReadReply<T> = Array<{
 
 async function ensureGroup(client: ReturnType<typeof createClient>) {
   try {
-    // Create group once; if already exists, Redis throws BUSYGROUP.
-    await client.xGroupCreate("pingNova:website", "usa", "0", {
+    await client.xGroupCreate(STREAM_KEY, GROUP_NAME, "0", {
       MKSTREAM: true
     });
   } catch (err) {
@@ -29,18 +33,20 @@ async function ensureGroup(client: ReturnType<typeof createClient>) {
 }
 
 async function main() {
-  const client = await createClient()
-    .on("error", (err) => console.log("Redis Client Error", err))
+  const client = await createClient({ url: process.env.REDIS_URL })
+    .on("error", (err) => console.error("Redis Client Error", err))
     .connect();
 
   await ensureGroup(client);
 
+  console.log(`[websiteCheckConsumer] listening on stream "${STREAM_KEY}", group "${GROUP_NAME}"`);
+
   while (true) {
     const res = await client.xReadGroup(
-      "usa",
-      "us-1",
+      GROUP_NAME,
+      CONSUMER_NAME,
       {
-        key: "pingNova:website",
+        key: STREAM_KEY,
         id: ">"
       },
       {
@@ -49,34 +55,31 @@ async function main() {
       }
     );
 
-    if (!res) {
-      continue;
-    }
+    if (!res) continue;
 
     const streams = res as unknown as StreamReadReply<Stream1Message> | null;
     const websites = streams?.[0]?.messages ?? [];
     const ackIds: string[] = [];
-    console.log({websites})
+
     for (const website of websites) {
       const startTime = Date.now();
-
       try {
-        await axios.get(website.message.url);
-        await addToWebsiteInfoList(website, "Up", Date.now() - startTime, "a88b2cf2-5bb8-4306-86e9-1bf98ab33097");
+        await axios.get(website.message.url, { timeout: 10_000 });
+        await addToWebsiteInfoList(website, "Up", Date.now() - startTime, REGION_ID);
         ackIds.push(website.id);
-      } catch(error) {
-        console.log({error})
+      } catch {
         try {
-          await addToWebsiteInfoList(website, "Down", -1, "a88b2cf2-5bb8-4306-86e9-1bf98ab33097");
+          await addToWebsiteInfoList(website, "Down", -1, REGION_ID);
           ackIds.push(website.id);
         } catch {
-          // If stream2 push fails, do not ack so message can be retried.
+          // If stream2 push fails, do NOT ack — message will be retried
         }
       }
     }
 
     if (ackIds.length > 0) {
-      await client.xAck("pingNova:website", "a88b2cf2-5bb8-4306-86e9-1bf98ab33097", ackIds);
+      // ← fixed: group name is now "usa" (same as the group we read from)
+      await client.xAck(STREAM_KEY, GROUP_NAME, ackIds);
     }
   }
 }
