@@ -2,9 +2,42 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { getWebsiteStatus, type WebsiteInfo, type WebsiteTick } from "../../../lib/api";
+
+type TabKey = "regional" | "http" | "logs";
+
+function avg(values: number[]) {
+  if (!values.length) return 0;
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+}
+
+function p95(values: number[]) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.ceil(sorted.length * 0.95) - 1;
+  return sorted[Math.max(0, index)];
+}
+
+function uptimePct(ticks: WebsiteTick[]) {
+  if (!ticks.length) return 100;
+  const up = ticks.filter((t) => t.status === "Up").length;
+  return Math.round((up / ticks.length) * 1000) / 10;
+}
+
+function formatTime(timestamp: string) {
+  const iso = new Date(timestamp).toISOString();
+  return iso.replace("T", " ").replace("Z", " UTC");
+}
+
+function workerForRegion(region: string) {
+  const lower = region.toLowerCase();
+  if (lower.startsWith("us") || lower.startsWith("usa")) return "us-1";
+  if (lower.startsWith("eu")) return "eu-1";
+  if (lower.startsWith("ap")) return "ap-1";
+  return `${region}-1`;
+}
 
 function UptimeBar({ ticks }: { ticks: WebsiteTick[] }) {
   const visible = ticks.slice(0, 40);
@@ -32,10 +65,10 @@ export default function WebsiteDetailPage() {
   const params = useParams<{ websiteId: string }>();
   const websiteId = typeof params.websiteId === "string" ? params.websiteId : "";
   const { getToken, isLoaded, userId } = useAuth();
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [website, setWebsite] = useState<WebsiteInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>("regional");
 
   useEffect(() => {
     if (!isLoaded || !userId || !websiteId) return;
@@ -57,19 +90,61 @@ export default function WebsiteDetailPage() {
     void load();
   }, [isLoaded, userId, websiteId, getToken]);
 
-  const latestTick = useMemo(() => website?.ticks?.[0] ?? null, [website]);
+  const ticks = website?.ticks ?? [];
+  const latencies = useMemo(() => ticks.filter((t) => t.response_time_ms >= 0).map((t) => t.response_time_ms), [ticks]);
+  const averageLatency = useMemo(() => avg(latencies), [latencies]);
+  const tailLatency = useMemo(() => p95(latencies), [latencies]);
+  const uptime = useMemo(() => uptimePct(ticks), [ticks]);
+  const peakLatency = useMemo(() => (latencies.length ? Math.max(...latencies) : 0), [latencies]);
 
-  const uptimePct = useMemo(() => {
-    if (!website?.ticks?.length) return 0;
-    const up = website.ticks.filter((t) => t.status === "Up").length;
-    return Math.round((up / website.ticks.length) * 1000) / 10;
-  }, [website]);
+  const regionStats = useMemo(() => {
+    const grouped = new Map<string, WebsiteTick[]>();
+    ticks.forEach((tick) => {
+      const region = tick.region_id || "unknown";
+      const list = grouped.get(region) ?? [];
+      list.push(tick);
+      grouped.set(region, list);
+    });
 
-  const avgResponse = useMemo(() => {
-    if (!website?.ticks?.length) return 0;
-    const sum = website.ticks.reduce((a, t) => a + t.response_time_ms, 0);
-    return Math.round(sum / website.ticks.length);
-  }, [website]);
+    return Array.from(grouped.entries()).map(([region, groupTicks]) => {
+      const regionLatencies = groupTicks.filter((t) => t.response_time_ms >= 0).map((t) => t.response_time_ms);
+      const success = groupTicks.filter((t) => t.status === "Up").length;
+      return {
+        region,
+        worker: workerForRegion(region),
+        avg: regionLatencies.length ? avg(regionLatencies) : 0,
+        successRate: groupTicks.length ? Math.round((success / groupTicks.length) * 1000) / 10 : 0,
+      };
+    });
+  }, [ticks]);
+
+  const signatureStats = useMemo(() => {
+    const total = ticks.length;
+    const up = ticks.filter((t) => t.status === "Up").length;
+    const down = ticks.filter((t) => t.status === "Down").length;
+    const timeout = ticks.filter((t) => t.response_time_ms === -1).length;
+    return {
+      total,
+      upRate: total ? Math.round((up / total) * 1000) / 10 : 0,
+      downRate: total ? Math.round((down / total) * 1000) / 10 : 0,
+      timeout,
+    };
+  }, [ticks]);
+
+  const logs = useMemo(() => {
+    return [...ticks]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .map((tick) => {
+        const code = tick.status === "Up" ? "200 OK" : "503 ERR";
+        const statusLabel = tick.status === "Up" ? "UP" : "ERR";
+        const latency = tick.response_time_ms >= 0 ? `${tick.response_time_ms}ms` : "Connection Timeout";
+        return {
+          status: tick.status,
+          line: `[${formatTime(tick.created_at)}] [${tick.region_id}] NODE: ${workerForRegion(tick.region_id)} | GET ${website?.url ?? ""} | ${code} | ${latency}`,
+          label: statusLabel,
+        };
+      });
+  }, [ticks, website?.url]);
 
   if (loading) {
     return (
@@ -121,91 +196,143 @@ export default function WebsiteDetailPage() {
         ← Back to Dashboard
       </Link>
 
-      <header className="flex flex-col items-start justify-between gap-4 rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl md:flex-row md:items-center">
-        <div>
-          <span className="inline-flex rounded-full border border-white/12 bg-white/6 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[#ece3d7c7]">
-            Website Detail
-          </span>
-          <h1 className="mt-3 break-all text-3xl font-semibold tracking-[-0.03em] text-[#f7f1e8] md:text-4xl">{website.url}</h1>
-          <p className="mt-1 text-sm text-[#ece3d7bf]">ID: {website.id}</p>
-        </div>
-        <div className="text-right">
-          {latestTick?.status === "Up" ? (
-            <span className="rounded-full bg-[linear-gradient(120deg,#f4dfc4,#ecbe8c)] px-3 py-1 text-xs font-semibold text-[#1d1205]">Up</span>
-          ) : latestTick?.status === "Down" ? (
-            <span className="rounded-full border border-[#f27e7080] bg-[#f27e704d] px-3 py-1 text-xs font-semibold text-[#fbe6df]">Down</span>
-          ) : (
-            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-[#ece3d7bf]">Unknown</span>
-          )}
-          <p className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-[#f7f1e8]">{uptimePct}%</p>
-          <span className="text-sm text-[#ece3d7bf]">uptime</span>
+      <header className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <span className="inline-flex rounded-full border border-white/12 bg-white/6 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[#ece3d7c7]">
+              Website Detail
+            </span>
+            <h1 className="mt-3 break-all text-3xl font-semibold tracking-[-0.03em] text-[#f7f1e8] md:text-4xl">{website.url}</h1>
+            <p className="mt-1 text-sm text-[#ece3d7bf]">ID: {website.id}</p>
+          </div>
+          <div className="grid w-full gap-3 md:w-auto md:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-center">
+              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Global Uptime</span>
+              <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{uptime}%</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-center">
+              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Avg Latency</span>
+              <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{averageLatency ? `${averageLatency} ms` : "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-center">
+              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Tail Latency (P95)</span>
+              <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{tailLatency ? `${tailLatency} ms` : "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-center">
+              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Ingested Events</span>
+              <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{ticks.length}</p>
+            </div>
+          </div>
         </div>
       </header>
 
-      <section className="grid gap-3 md:grid-cols-4">
-        <article className="rounded-2xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl">
-          <h3 className="text-sm text-[#ece3d7bf]">Uptime</h3>
-          <p className="mt-1 text-2xl font-semibold text-[#f7f1e8]">{uptimePct}%</p>
-        </article>
-        <article className="rounded-2xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl">
-          <h3 className="text-sm text-[#ece3d7bf]">Avg Response</h3>
-          <p className="mt-1 text-2xl font-semibold text-[#f7f1e8]">{avgResponse > 0 ? `${avgResponse} ms` : "—"}</p>
-        </article>
-        <article className="rounded-2xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl">
-          <h3 className="text-sm text-[#ece3d7bf]">Last Check</h3>
-          <p className="mt-1 text-2xl font-semibold text-[#f7f1e8]">
-            {latestTick?.created_at
-              ? new Date(latestTick.created_at).toLocaleTimeString()
-              : "—"}
-          </p>
-        </article>
-        <article className="rounded-2xl border border-white/10 bg-white/6 p-5 backdrop-blur-xl">
-          <h3 className="text-sm text-[#ece3d7bf]">Total Checks</h3>
-          <p className="mt-1 text-2xl font-semibold text-[#f7f1e8]">{website.ticks.length}</p>
-        </article>
+      <section className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
+        <h2 className="text-xl font-semibold text-[#f7f1e8]">Broker Latency Ingress History (Last 40 checks)</h2>
+        {ticks.length === 0 ? (
+          <p className="mt-4 text-sm text-[#ece3d7bf]">No ingress events recorded yet.</p>
+        ) : (
+          <>
+            <div className="mt-4">
+              <UptimeBar ticks={ticks} />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between text-xs text-[#ece3d7bf]">
+              <span>Current Ingestion Feed (Right is newest)</span>
+              <span>Peak Latency: {peakLatency} ms</span>
+            </div>
+          </>
+        )}
       </section>
 
-      {website.ticks.length > 0 && (
-        <section className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
-          <h2 className="text-xl font-semibold text-[#f7f1e8]">Response Time — Last {Math.min(website.ticks.length, 40)} Checks</h2>
-          <UptimeBar ticks={website.ticks} />
-        </section>
-      )}
+      <section className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-3">
+          {(
+            [
+              { key: "regional", label: "Regional Analytics" },
+              { key: "http", label: "HTTP Signatures" },
+              { key: "logs", label: "Ingress Trace Logs" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setTab(item.key)}
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                tab === item.key
+                  ? "bg-white text-[#0b0b0b]"
+                  : "text-[#ece3d7bf] hover:text-white"
+              }`}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
 
-      <section className="space-y-3">
-        <h2 className="text-2xl font-semibold text-[#f7f1e8]">Recent Checks</h2>
-        {website.ticks.length === 0 ? (
-          <article className="rounded-[20px] border border-white/12 bg-white/8 p-6 text-[#ece3d7bf] backdrop-blur-xl">
-            No checks are available yet. The producer/consumer pipeline may still be
-            processing.
-          </article>
-        ) : (
-          <div className="space-y-2">
-            {website.ticks.map((tick) => (
-              <article
-                key={tick.id}
-                className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-white/12 bg-white/8 p-4 backdrop-blur-xl md:flex-row md:items-center"
-              >
-                <div>
-                  <p className="text-[#f7f1e8]">{new Date(tick.created_at).toLocaleString()}</p>
-                  <span className="text-sm text-[#ece3d7bf]">Region: {tick.region_id}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-[#ece3d7bf]">
-                    {tick.response_time_ms >= 0
-                      ? `${tick.response_time_ms} ms`
-                      : "Timed out"}
-                  </span>
-                  {tick.status === "Up" ? (
-                    <span className="rounded-full bg-[linear-gradient(120deg,#f4dfc4,#ecbe8c)] px-3 py-1 text-xs font-semibold text-[#1d1205]">Up</span>
-                  ) : tick.status === "Down" ? (
-                    <span className="rounded-full border border-[#f27e7080] bg-[#f27e704d] px-3 py-1 text-xs font-semibold text-[#fbe6df]">Down</span>
-                  ) : (
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-[#ece3d7bf]">Unknown</span>
-                  )}
-                </div>
-              </article>
-            ))}
+        {tab === "regional" && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-[11px] uppercase tracking-[0.12em] text-[#ece3d7bf]">
+                <tr className="border-b border-white/10">
+                  <th className="py-2 pr-3">Region ID</th>
+                  <th className="py-2 pr-3">Worker Node</th>
+                  <th className="py-2 pr-3">Avg Response</th>
+                  <th className="py-2">Success Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {regionStats.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-[#ece3d7bf]">
+                      No regional telemetry available yet.
+                    </td>
+                  </tr>
+                ) : (
+                  regionStats.map((region) => (
+                    <tr key={region.region} className="border-b border-white/5 last:border-none">
+                      <td className="py-2 pr-3 text-[#f7f1e8]">{region.region}</td>
+                      <td className="py-2 pr-3 text-[#ece3d7bf]">{region.worker}</td>
+                      <td className="py-2 pr-3 text-[#ece3d7bf]">{region.avg ? `${region.avg} ms` : "—"}</td>
+                      <td className="py-2 text-[#ece3d7bf]">{region.successRate ? `${region.successRate}%` : "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === "http" && (
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <article className="rounded-2xl border border-white/10 bg-white/6 p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">HTTP 2xx Success Rate</p>
+              <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{signatureStats.total ? `${signatureStats.upRate}%` : "—"}</p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-white/6 p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">HTTP 5xx Server Outages</p>
+              <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{signatureStats.total ? `${signatureStats.downRate}%` : "—"}</p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-white/6 p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Connection Errors / Timeouts</p>
+              <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{signatureStats.timeout}</p>
+            </article>
+          </div>
+        )}
+
+        {tab === "logs" && (
+          <div className="mt-4 rounded-xl border border-white/10 bg-[#0b0b0b] p-3 font-mono text-xs">
+            {logs.length === 0 ? (
+              <p className="text-[#9b9487]">No ingress traces recorded yet.</p>
+            ) : (
+              <div className="space-y-1">
+                {logs.map((log, index) => (
+                  <p
+                    key={`${log.line}-${index}`}
+                    className={log.status === "Down" ? "text-[#f27e70]" : "text-[#f0cc9f]"}
+                  >
+                    {log.line}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </section>

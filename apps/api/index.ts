@@ -4,7 +4,6 @@ import cors from "cors"
 import {prisma} from "@repo/db"
 import { authMiddleware } from "./middleware";
 import type { Request, Response } from "express";
-import bcrypt from "bcrypt"
 import { isValidUrl } from "./utils";
 
 const app = express();

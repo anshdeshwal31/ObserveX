@@ -1,26 +1,24 @@
-import axios from "axios"
-import { BACKEND_URL } from "./config"
+type ClerkTestUser = {
+    id: string;
+    jwt: string;
+};
 
-const USER_NAME = Math.random().toString();
-
-export async function createUser(): Promise<{
-    id: string,
-    jwt: string
-}> {
-    const res = await axios.post(`${BACKEND_URL}/user/signup`, {
-        username: USER_NAME,
-        password: "123123123"
-    })
-
-    const signinRes = await axios.post(`${BACKEND_URL}/user/signin`, {
-        username: USER_NAME,
-        password: "123123123"
-    })
-
-    // console.log({signinRes})
-    // console.log("signinRes.data.jwt",signinRes.data.jwt)
-    return {
-        id: res.data.id,
-        jwt: signinRes.data.jwt
+function getEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+        throw new Error(
+            `Missing ${name}. Set it in your environment to run Clerk-auth tests.`
+        );
     }
+    return value;
+}
+
+export function getTestUser(slot: 1 | 2 = 1): ClerkTestUser {
+    const idKey = slot === 1 ? "CLERK_TEST_USER_ID" : "CLERK_TEST_USER_ID_2";
+    const jwtKey = slot === 1 ? "CLERK_TEST_JWT" : "CLERK_TEST_JWT_2";
+
+    return {
+        id: getEnv(idKey),
+        jwt: getEnv(jwtKey),
+    };
 }

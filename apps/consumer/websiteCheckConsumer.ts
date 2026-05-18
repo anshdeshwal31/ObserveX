@@ -42,38 +42,48 @@ async function main() {
   console.log(`[websiteCheckConsumer] listening on stream "${STREAM_KEY}", group "${GROUP_NAME}"`);
 
   while (true) {
-    const res = await client.xReadGroup(
+    // First try to read pending messages (PEL)
+    let res = await client.xReadGroup(
       GROUP_NAME,
       CONSUMER_NAME,
-      {
-        key: STREAM_KEY,
-        id: ">"
-      },
-      {
-        COUNT: 10,
-        BLOCK: 0
-      }
+      { key: STREAM_KEY, id: "0" },
+      { COUNT: 10 }
     );
 
-    if (!res) continue;
+    // If no pending messages, wait for new ones
+    let streams = res as unknown as StreamReadReply<Stream1Message> | null;
+    let websites = streams?.[0]?.messages ?? [];
 
-    const streams = res as unknown as StreamReadReply<Stream1Message> | null;
-    const websites = streams?.[0]?.messages ?? [];
+    if (websites.length === 0) {
+      res = await client.xReadGroup(
+        GROUP_NAME,
+        CONSUMER_NAME,
+        { key: STREAM_KEY, id: ">" },
+        { COUNT: 10, BLOCK: 0 }
+      );
+      streams = res as unknown as StreamReadReply<Stream1Message> | null;
+      websites = streams?.[0]?.messages ?? [];
+    }
+
     const ackIds: string[] = [];
 
     for (const website of websites) {
       const startTime = Date.now();
+      let status = "Up";
+      let responseTime = -1;
+      
       try {
         await axios.get(website.message.url, { timeout: 10_000 });
-        await addToWebsiteInfoList(website, "Up", Date.now() - startTime, REGION_ID);
+        responseTime = Date.now() - startTime;
+      } catch {
+        status = "Down";
+      }
+
+      try {
+        await addToWebsiteInfoList(website, status, responseTime, REGION_ID);
         ackIds.push(website.id);
       } catch {
-        try {
-          await addToWebsiteInfoList(website, "Down", -1, REGION_ID);
-          ackIds.push(website.id);
-        } catch {
-          // If stream2 push fails, do NOT ack — message will be retried
-        }
+        // If stream2 push fails, do NOT ack — message will be retried
       }
     }
 

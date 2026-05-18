@@ -30,19 +30,28 @@ interface WebsiteTypeFromStream2 {
 }
 
 const bulkUploadToDB = async (client: ReturnType<typeof createClient>) => {
-  const res = await client.xReadGroup(
+  let res = await client.xReadGroup(
     GROUP_NAME,
     CONSUMER_NAME,
-    {
-      key: STREAM_KEY,
-      id: ">"
-    },
+    { key: STREAM_KEY, id: "0" },
     { COUNT: 1000 }
   );
 
-  const websites =
+  let websites =
     (res as unknown as Array<{ messages: WebsiteTypeFromStream2[] }> | null)?.[0]
       ?.messages ?? [];
+
+  if (websites.length === 0) {
+    res = await client.xReadGroup(
+      GROUP_NAME,
+      CONSUMER_NAME,
+      { key: STREAM_KEY, id: ">" },
+      { COUNT: 1000 }
+    );
+    websites =
+      (res as unknown as Array<{ messages: WebsiteTypeFromStream2[] }> | null)?.[0]
+        ?.messages ?? [];
+  }
 
   if (websites.length === 0) return;
 

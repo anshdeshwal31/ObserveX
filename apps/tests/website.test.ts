@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeAll } from "bun:test";
 import axios from "axios";
-import { createUser } from "./testUtils";
+import { getTestUser } from "./testUtils";
 
 
 let BASE_URL = "http://localhost:3000";
 
 describe("Website gets created", () => {
-    let token: string,id:string
-    beforeAll(async () => { 
-        const data = await createUser();
-        token = data.jwt as string;
-        id = data.id
+    let token: string, id: string
+    beforeAll(() => { 
+        const data = getTestUser(1);
+        token = data.jwt;
+        id = data.id;
      })
     
     it("Website not created if url is not present", async () => {
@@ -20,7 +20,7 @@ describe("Website gets created", () => {
             },
             {
                 headers:{
-                    Authorization:token
+                    Authorization: `Bearer ${token}`
                 }
             }
         );
@@ -39,7 +39,7 @@ describe("Website gets created", () => {
             },
             {
                 headers:{
-                    Authorization:token
+                    Authorization: `Bearer ${token}`
                 }
             }
             );
@@ -70,9 +70,9 @@ describe("Can fetch website", () => {
     let token1: string, userId1: string;
     let token2: string, userId2: string;
 
-    beforeAll(async () => {
-        const user1 = await createUser();
-        const user2 = await createUser();
+    beforeAll(() => {
+        const user1 = getTestUser(1);
+        const user2 = getTestUser(2);
         token1 = user1.jwt;
         userId1 = user1.id;
         token2 = user2.jwt;
@@ -88,18 +88,18 @@ describe("Can fetch website", () => {
 
             }, {
                 headers: {
-                    Authorization: token1
+                    Authorization: `Bearer ${token1}`
                 }
             })
             
-            const getWebsiteResponse = await axios.get(`${BASE_URL}/website/${websiteResponse.data.id}`, {
+            const getWebsiteResponse = await axios.get(`${BASE_URL}/status/${websiteResponse.data.id}`, {
                 headers: {
-                    Authorization: token1
+                    Authorization: `Bearer ${token1}`
                 }
             })
             
             expect(getWebsiteResponse.data.websiteInfo.id).toBe(websiteResponse.data.id)
-            expect(getWebsiteResponse.data.websiteInfo.userId).toBe(userId1)
+            expect(getWebsiteResponse.data.websiteInfo.user_id).toBe(userId1)
         } catch (error) {
             console.log("Error in test",error)
         }
@@ -111,14 +111,14 @@ describe("Can fetch website", () => {
             user_id:userId1
         }, {
             headers: {
-                Authorization: token1
+                Authorization: `Bearer ${token1}`
             }
         })
 
         try {
-            await axios.get(`${BASE_URL}/website/${websiteResponse.data.id}`, {
+            await axios.get(`${BASE_URL}/status/${websiteResponse.data.id}`, {
                 headers: {
-                    Authorization: token2
+                    Authorization: `Bearer ${token2}`
                 }
             })
             expect(false, "Should be able to access website of a diff user")

@@ -24,12 +24,22 @@ export type WebsiteInfo = {
 };
 
 async function parseJson<T>(response: Response): Promise<T> {
-  const data = (await response.json()) as T | { message?: string; error?: unknown };
+  const contentType = response.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+
+  let data: any = null;
+  let text = "";
+
+  if (isJson) {
+    data = await response.json();
+  } else {
+    text = await response.text();
+  }
 
   if (!response.ok) {
     const errMsg =
-      (data as { message?: string }).message ??
-      `Request failed with status ${response.status}`;
+      data?.message ??
+      (text ? text.slice(0, 100) : `Request failed with status ${response.status}`);
     throw new Error(errMsg);
   }
 
