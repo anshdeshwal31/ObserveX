@@ -11,13 +11,15 @@ datasource db {
 }
 
 model Website {
-  id         String        @id @default(uuid())
-  url        String
-  user_id    String
-  time_added DateTime      @default(now())
-  ticks      WebsiteTick[]
-  incidents  Incident[]
-  user       User          @relation(fields: [user_id], references: [id])
+  id                     String        @id @default(uuid())
+  url                    String
+  user_id                String
+  time_added             DateTime      @default(now())
+  incident_open_after    Int?
+  incident_resolve_after Int?
+  ticks                  WebsiteTick[]
+  incidents              Incident[]
+  user                   User          @relation(fields: [user_id], references: [id])
 }
 
 model User {

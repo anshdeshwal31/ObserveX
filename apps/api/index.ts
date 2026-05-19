@@ -8,6 +8,34 @@ import { isValidUrl } from "./utils";
 import { notifyIncidentResolved } from "./incidentNotify";
 
 const app = express();
+const MIN_THRESHOLD = 1;
+const MAX_THRESHOLD = 10;
+
+function parseThreshold(value: unknown) {
+    if (value === undefined) {
+        return { provided: false } as const;
+    }
+
+    if (value === null) {
+        return { provided: true, value: null } as const;
+    }
+
+    const num = typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : typeof value === "number"
+            ? value
+            : Number.NaN;
+
+    if (!Number.isInteger(num)) {
+        return { error: "must be an integer" } as const;
+    }
+
+    if (num < MIN_THRESHOLD || num > MAX_THRESHOLD) {
+        return { error: `must be between ${MIN_THRESHOLD} and ${MAX_THRESHOLD}` } as const;
+    }
+
+    return { provided: true, value: num } as const;
+}
 
 // CORS — allow requests from the frontend origin
 const allowedOrigins = [
@@ -49,7 +77,7 @@ app.get("/websites", authMiddleware, async (req: Request, res: Response) => {
 
 // ─── add website ─────────────────────────────────────────────────────────────
 app.post("/website", authMiddleware, async (req: Request, res: Response) => {
-    const { url } = req.body;
+    const { url, incident_open_after, incident_resolve_after } = req.body;
 
     if (!url) {
         res.status(400).json({ message: "url is required." });
@@ -61,16 +89,99 @@ app.post("/website", authMiddleware, async (req: Request, res: Response) => {
         return;
     }
 
+    const openParsed = parseThreshold(incident_open_after);
+    if ("error" in openParsed) {
+        res.status(400).json({ message: `incident_open_after ${openParsed.error}` });
+        return;
+    }
+
+    const resolveParsed = parseThreshold(incident_resolve_after);
+    if ("error" in resolveParsed) {
+        res.status(400).json({ message: `incident_resolve_after ${resolveParsed.error}` });
+        return;
+    }
+
     try {
-        const website = await prisma.website.create({
-            data: {
-                url,
-                user_id: req.user_id!
-            }
-        });
+        const data: {
+            url: string;
+            user_id: string;
+            incident_open_after?: number | null;
+            incident_resolve_after?: number | null;
+        } = {
+            url,
+            user_id: req.user_id!
+        };
+
+        if (openParsed.provided) {
+            data.incident_open_after = openParsed.value;
+        }
+
+        if (resolveParsed.provided) {
+            data.incident_resolve_after = resolveParsed.value;
+        }
+
+        const website = await prisma.website.create({ data });
         res.status(201).json({ id: website.id });
     } catch (error) {
         console.error("[POST /website]", error);
+        res.status(500).json({ message: "Internal server error." });
+    }
+});
+
+// ─── update per-website incident thresholds ───────────────────────────────
+app.patch("/website/:websiteId/thresholds", authMiddleware, async (req: Request, res: Response) => {
+    const websiteId = Array.isArray(req.params.websiteId)
+        ? req.params.websiteId[0]!
+        : req.params.websiteId;
+
+    const openParsed = parseThreshold(req.body?.incident_open_after);
+    if ("error" in openParsed) {
+        res.status(400).json({ message: `incident_open_after ${openParsed.error}` });
+        return;
+    }
+
+    const resolveParsed = parseThreshold(req.body?.incident_resolve_after);
+    if ("error" in resolveParsed) {
+        res.status(400).json({ message: `incident_resolve_after ${resolveParsed.error}` });
+        return;
+    }
+
+    if (!openParsed.provided && !resolveParsed.provided) {
+        res.status(400).json({ message: "Provide incident_open_after and/or incident_resolve_after." });
+        return;
+    }
+
+    try {
+        const website = await prisma.website.findFirst({
+            where: { id: websiteId, user_id: req.user_id! }
+        });
+
+        if (!website) {
+            res.status(404).json({ message: "Website not found." });
+            return;
+        }
+
+        const data: {
+            incident_open_after?: number | null;
+            incident_resolve_after?: number | null;
+        } = {};
+
+        if (openParsed.provided) {
+            data.incident_open_after = openParsed.value;
+        }
+
+        if (resolveParsed.provided) {
+            data.incident_resolve_after = resolveParsed.value;
+        }
+
+        const updated = await prisma.website.update({
+            where: { id: website.id },
+            data
+        });
+
+        res.json({ website: updated });
+    } catch (error) {
+        console.error("[PATCH /website/:websiteId/thresholds]", error);
         res.status(500).json({ message: "Internal server error." });
     }
 });

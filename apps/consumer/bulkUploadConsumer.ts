@@ -5,8 +5,23 @@ import { notifyIncidentOpened, notifyIncidentResolved } from "./incidentNotify";
 const STREAM_KEY = "pingNova:websiteResponse";
 const GROUP_NAME = "usa";
 const CONSUMER_NAME = "us-1";
-const INCIDENT_OPEN_AFTER = Number(process.env.INCIDENT_OPEN_AFTER || "3");
-const INCIDENT_RESOLVE_AFTER = Number(process.env.INCIDENT_RESOLVE_AFTER || "2");
+const DEFAULT_OPEN_AFTER = Number.parseInt(process.env.INCIDENT_OPEN_AFTER || "3", 10);
+const DEFAULT_RESOLVE_AFTER = Number.parseInt(process.env.INCIDENT_RESOLVE_AFTER || "2", 10);
+const MIN_THRESHOLD = 1;
+const MAX_THRESHOLD = 10;
+
+function clampThreshold(value: number) {
+  if (!Number.isFinite(value)) return MIN_THRESHOLD;
+  const integer = Math.floor(value);
+  if (integer < MIN_THRESHOLD) return MIN_THRESHOLD;
+  if (integer > MAX_THRESHOLD) return MAX_THRESHOLD;
+  return integer;
+}
+
+function normalizeThreshold(value: number | null | undefined, fallback: number) {
+  if (typeof value !== "number") return clampThreshold(fallback);
+  return clampThreshold(value);
+}
 
 async function ensureGroup(client: ReturnType<typeof createClient>) {
   try {
@@ -43,15 +58,28 @@ function hasConsecutiveStatus(
 }
 
 async function evaluateIncidentForWebsite(websiteId: string) {
-  const windowSize = Math.max(INCIDENT_OPEN_AFTER, INCIDENT_RESOLVE_AFTER);
+  const website = await prisma.website.findUnique({
+    where: { id: websiteId },
+    select: {
+      url: true,
+      incident_open_after: true,
+      incident_resolve_after: true,
+    },
+  });
+
+  if (!website) return;
+
+  const openAfter = normalizeThreshold(website.incident_open_after, DEFAULT_OPEN_AFTER);
+  const resolveAfter = normalizeThreshold(website.incident_resolve_after, DEFAULT_RESOLVE_AFTER);
+  const windowSize = Math.max(openAfter, resolveAfter);
   const recentTicks = await prisma.websiteTick.findMany({
     where: { website_id: websiteId },
     orderBy: { created_at: "desc" },
     take: windowSize,
   });
 
-  const hasDowns = hasConsecutiveStatus(recentTicks, INCIDENT_OPEN_AFTER, "Down");
-  const hasUps = hasConsecutiveStatus(recentTicks, INCIDENT_RESOLVE_AFTER, "Up");
+  const hasDowns = hasConsecutiveStatus(recentTicks, openAfter, "Down");
+  const hasUps = hasConsecutiveStatus(recentTicks, resolveAfter, "Up");
 
   const openIncident = await prisma.incident.findFirst({
     where: {
@@ -61,13 +89,10 @@ async function evaluateIncidentForWebsite(websiteId: string) {
     orderBy: { created_at: "desc" },
   });
 
+  const websiteUrl = website.url ?? websiteId;
+
   if (hasDowns && !openIncident) {
-    const website = await prisma.website.findUnique({
-      where: { id: websiteId },
-      select: { url: true },
-    });
-    const websiteUrl = website?.url ?? websiteId;
-    const reason = `${INCIDENT_OPEN_AFTER} consecutive failures`;
+    const reason = `${openAfter} consecutive failures`;
 
     const incident = await prisma.incident.create({
       data: {
@@ -104,12 +129,7 @@ async function evaluateIncidentForWebsite(websiteId: string) {
   }
 
   if (hasUps && openIncident) {
-    const website = await prisma.website.findUnique({
-      where: { id: websiteId },
-      select: { url: true },
-    });
-    const websiteUrl = website?.url ?? websiteId;
-    const reason = `${INCIDENT_RESOLVE_AFTER} consecutive successes`;
+    const reason = `${resolveAfter} consecutive successes`;
 
     const incident = await prisma.incident.update({
       where: { id: openIncident.id },
