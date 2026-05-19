@@ -44,8 +44,6 @@ export function HeroSection() {
         <StarBorder
           as="a"
           href="/dashboard"
-          color="#f0cc9f"
-          speed="5s"
           thickness={1}
           innerClassName="rounded-full bg-white/8 px-5 py-3 text-sm font-semibold text-[#f7f1e8] backdrop-blur"
         >
@@ -54,8 +52,6 @@ export function HeroSection() {
         <StarBorder
           as="a"
           href="/auth"
-          color="#f1bd90"
-          speed="4.8s"
           thickness={1}
           innerClassName="rounded-full bg-[linear-gradient(130deg,#fff7ec,#f2d5b6_58%,#f1bd90)] px-5 py-3 text-sm font-semibold text-[#17120e]"
         >

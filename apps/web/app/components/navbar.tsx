@@ -33,8 +33,6 @@ export function Navbar() {
         <StarBorder
           as={Link}
           href="/auth"
-          color="#f0cc9f"
-          speed="5s"
           thickness={1}
           className="shrink-0"
           innerClassName="rounded-full bg-[#111113] px-4 py-2 text-sm font-semibold text-[#f7f1e8]"

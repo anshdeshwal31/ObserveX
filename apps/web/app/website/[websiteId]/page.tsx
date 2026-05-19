@@ -200,26 +200,26 @@ export default function WebsiteDetailPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <span className="inline-flex rounded-full border border-white/12 bg-white/6 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[#ece3d7c7]">
-              Website Detail
+              Endpoint Instance
             </span>
             <h1 className="mt-3 break-all text-3xl font-semibold tracking-[-0.03em] text-[#f7f1e8] md:text-4xl">{website.url}</h1>
-            <p className="mt-1 text-sm text-[#ece3d7bf]">ID: {website.id}</p>
+            <p className="mt-1 text-sm text-[#ece3d7bf]">Endpoint ID: {website.id}</p>
           </div>
           <div className="grid w-full gap-3 md:w-auto md:grid-cols-4">
             <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-center">
-              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Global Uptime</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">SLO Uptime</span>
               <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{uptime}%</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-center">
-              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Avg Latency</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Mean Latency</span>
               <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{averageLatency ? `${averageLatency} ms` : "—"}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-center">
-              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Tail Latency (P95)</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">P95 Tail</span>
               <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{tailLatency ? `${tailLatency} ms` : "—"}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-center">
-              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Ingested Events</span>
+              <span className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Events Ingested</span>
               <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{ticks.length}</p>
             </div>
           </div>
@@ -227,7 +227,7 @@ export default function WebsiteDetailPage() {
       </header>
 
       <section className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
-        <h2 className="text-xl font-semibold text-[#f7f1e8]">Broker Latency Ingress History (Last 40 checks)</h2>
+        <h2 className="text-xl font-semibold text-[#f7f1e8]">Ingress Latency Window (Last 40 checks)</h2>
         {ticks.length === 0 ? (
           <p className="mt-4 text-sm text-[#ece3d7bf]">No ingress events recorded yet.</p>
         ) : (
@@ -236,7 +236,7 @@ export default function WebsiteDetailPage() {
               <UptimeBar ticks={ticks} />
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between text-xs text-[#ece3d7bf]">
-              <span>Current Ingestion Feed (Right is newest)</span>
+              <span>Right edge is newest sample</span>
               <span>Peak Latency: {peakLatency} ms</span>
             </div>
           </>
@@ -247,9 +247,9 @@ export default function WebsiteDetailPage() {
         <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-3">
           {(
             [
-              { key: "regional", label: "Regional Analytics" },
-              { key: "http", label: "HTTP Signatures" },
-              { key: "logs", label: "Ingress Trace Logs" },
+              { key: "regional", label: "Regional SLO Matrix" },
+              { key: "http", label: "HTTP Distribution" },
+              { key: "logs", label: "Stream Trace Logs" },
             ] as const
           ).map((item) => (
             <button
@@ -274,8 +274,8 @@ export default function WebsiteDetailPage() {
                 <tr className="border-b border-white/10">
                   <th className="py-2 pr-3">Region ID</th>
                   <th className="py-2 pr-3">Worker Node</th>
-                  <th className="py-2 pr-3">Avg Response</th>
-                  <th className="py-2">Success Rate</th>
+                  <th className="py-2 pr-3">Mean Latency</th>
+                  <th className="py-2">SLO Pass Rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -303,15 +303,15 @@ export default function WebsiteDetailPage() {
         {tab === "http" && (
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <article className="rounded-2xl border border-white/10 bg-white/6 p-4">
-              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">HTTP 2xx Success Rate</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">2xx Success Rate</p>
               <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{signatureStats.total ? `${signatureStats.upRate}%` : "—"}</p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-white/6 p-4">
-              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">HTTP 5xx Server Outages</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">5xx Error Rate</p>
               <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{signatureStats.total ? `${signatureStats.downRate}%` : "—"}</p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-white/6 p-4">
-              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Connection Errors / Timeouts</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">Timeout Events</p>
               <p className="mt-2 text-2xl font-semibold text-[#f7f1e8]">{signatureStats.timeout}</p>
             </article>
           </div>
@@ -320,10 +320,10 @@ export default function WebsiteDetailPage() {
         {tab === "logs" && (
           <div className="mt-4 rounded-xl border border-white/10 bg-[#0b0b0b] p-3 font-mono text-xs">
             {logs.length === 0 ? (
-              <p className="text-[#9b9487]">No ingress traces recorded yet.</p>
+              <p className="text-[#9b9487]">No stream traces recorded yet.</p>
             ) : (
               <div className="space-y-1">
-                {logs.map((log, index) => (
+                {logs.slice(0, 18).map((log, index) => (
                   <p
                     key={`${log.line}-${index}`}
                     className={log.status === "Down" ? "text-[#f27e70]" : "text-[#f0cc9f]"}

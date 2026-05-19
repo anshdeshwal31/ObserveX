@@ -10,14 +10,13 @@ datasource db {
   provider = "postgresql"
 }
 
-
-
 model Website {
   id         String        @id @default(uuid())
   url        String
   user_id    String
   time_added DateTime      @default(now())
   ticks      WebsiteTick[]
+  incidents  Incident[]
   user       User          @relation(fields: [user_id], references: [id])
 }
 
@@ -45,8 +44,52 @@ model WebsiteTick {
   created_at       DateTime      @default(now())
 }
 
+model Incident {
+  id              String           @id @default(uuid())
+  website_id      String
+  status          IncidentStatus
+  severity        IncidentSeverity
+  title           String
+  fingerprint     String?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+  acknowledged_at DateTime?
+  resolved_at     DateTime?
+  last_seen_at    DateTime?
+  website         Website          @relation(fields: [website_id], references: [id])
+  events          IncidentEvent[]
+}
+
+model IncidentEvent {
+  id          String            @id @default(uuid())
+  incident_id String
+  type        IncidentEventType
+  message     String?
+  metadata    Json?
+  created_at  DateTime          @default(now())
+  incident    Incident          @relation(fields: [incident_id], references: [id])
+}
+
 enum WebsiteStatus {
   Up
   Down
   Unknown
+}
+
+enum IncidentStatus {
+  Open
+  Acknowledged
+  Resolved
+}
+
+enum IncidentSeverity {
+  Info
+  Warning
+  Critical
+}
+
+enum IncidentEventType {
+  Detected
+  Acknowledged
+  Resolved
 }

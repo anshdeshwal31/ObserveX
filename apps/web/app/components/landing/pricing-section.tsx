@@ -1,7 +1,6 @@
 "use client";
 
 import { AnimateIn } from "../animate-in";
-import { StarBorder } from "../reactbits/star-border";
 
 const plans = [
   {

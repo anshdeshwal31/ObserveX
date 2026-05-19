@@ -3,9 +3,9 @@
 import { AnimateIn } from "../animate-in";
 
 const stats = [
-  { label: "Websites Monitored", value: "1,240+" },
-  { label: "Incidents Resolved", value: "97%" },
-  { label: "Median Response", value: "124ms" },
+  { label: "Websites Monitored", value: "See Dashboard" },
+  { label: "Incidents Resolved", value: "Placeholder" },
+  { label: "Median Response", value: "See Site Detail" },
 ];
 
 export function StatsBand() {

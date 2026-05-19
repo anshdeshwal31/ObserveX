@@ -4,7 +4,7 @@ import { AnimateIn } from "../animate-in";
 
 const steps = [
   { num: "01", title: "Add Website", desc: "Paste a URL in the dashboard and start tracking immediately." },
-  { num: "02", title: "Run Checks", desc: "PingNova captures status and response time continuously across regions." },
+  { num: "02", title: "Run Checks", desc: "PingNova captures status and response time across regions with a default ~3-minute cadence." },
   { num: "03", title: "Investigate Faster", desc: "Open per-website detail pages to debug spikes and downtime patterns." },
 ];
 

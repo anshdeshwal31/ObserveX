@@ -1,9 +1,12 @@
 import { createClient } from "redis";
 import { prisma } from "@repo/db";
+import { notifyIncidentOpened, notifyIncidentResolved } from "./incidentNotify";
 
 const STREAM_KEY = "pingNova:websiteResponse";
 const GROUP_NAME = "usa";
 const CONSUMER_NAME = "us-1";
+const INCIDENT_OPEN_AFTER = Number(process.env.INCIDENT_OPEN_AFTER || "3");
+const INCIDENT_RESOLVE_AFTER = Number(process.env.INCIDENT_RESOLVE_AFTER || "2");
 
 async function ensureGroup(client: ReturnType<typeof createClient>) {
   try {
@@ -27,6 +30,135 @@ interface WebsiteTypeFromStream2 {
     response_time_ms: string;
     region_id: string;
   };
+}
+
+function hasConsecutiveStatus(
+  ticks: Array<{ status: WebsiteStatus }>,
+  count: number,
+  status: WebsiteStatus
+) {
+  if (count <= 0) return false;
+  if (ticks.length < count) return false;
+  return ticks.slice(0, count).every((tick) => tick.status === status);
+}
+
+async function evaluateIncidentForWebsite(websiteId: string) {
+  const windowSize = Math.max(INCIDENT_OPEN_AFTER, INCIDENT_RESOLVE_AFTER);
+  const recentTicks = await prisma.websiteTick.findMany({
+    where: { website_id: websiteId },
+    orderBy: { created_at: "desc" },
+    take: windowSize,
+  });
+
+  const hasDowns = hasConsecutiveStatus(recentTicks, INCIDENT_OPEN_AFTER, "Down");
+  const hasUps = hasConsecutiveStatus(recentTicks, INCIDENT_RESOLVE_AFTER, "Up");
+
+  const openIncident = await prisma.incident.findFirst({
+    where: {
+      website_id: websiteId,
+      status: { in: ["Open", "Acknowledged"] },
+    },
+    orderBy: { created_at: "desc" },
+  });
+
+  if (hasDowns && !openIncident) {
+    const website = await prisma.website.findUnique({
+      where: { id: websiteId },
+      select: { url: true },
+    });
+    const websiteUrl = website?.url ?? websiteId;
+    const reason = `${INCIDENT_OPEN_AFTER} consecutive failures`;
+
+    const incident = await prisma.incident.create({
+      data: {
+        website_id: websiteId,
+        status: "Open",
+        severity: "Critical",
+        title: `Endpoint down: ${websiteUrl}`,
+        fingerprint: `${websiteId}:consecutive-down`,
+        last_seen_at: new Date(),
+      },
+    });
+
+    await prisma.incidentEvent.create({
+      data: {
+        incident_id: incident.id,
+        type: "Detected",
+        message: reason,
+        metadata: {
+          website_id: websiteId,
+        },
+      },
+    });
+
+    await notifyIncidentOpened({
+      incidentId: incident.id,
+      websiteId,
+      websiteUrl,
+      severity: incident.severity,
+      title: incident.title,
+      reason,
+    });
+
+    return;
+  }
+
+  if (hasUps && openIncident) {
+    const website = await prisma.website.findUnique({
+      where: { id: websiteId },
+      select: { url: true },
+    });
+    const websiteUrl = website?.url ?? websiteId;
+    const reason = `${INCIDENT_RESOLVE_AFTER} consecutive successes`;
+
+    const incident = await prisma.incident.update({
+      where: { id: openIncident.id },
+      data: {
+        status: "Resolved",
+        resolved_at: new Date(),
+        last_seen_at: new Date(),
+      },
+    });
+
+    await prisma.incidentEvent.create({
+      data: {
+        incident_id: incident.id,
+        type: "Resolved",
+        message: reason,
+        metadata: {
+          website_id: websiteId,
+        },
+      },
+    });
+
+    await notifyIncidentResolved({
+      incidentId: incident.id,
+      websiteId,
+      websiteUrl,
+      severity: incident.severity,
+      title: incident.title,
+      reason,
+    });
+
+    return;
+  }
+
+  if (hasDowns && openIncident) {
+    await prisma.incident.update({
+      where: { id: openIncident.id },
+      data: { last_seen_at: new Date() },
+    });
+  }
+}
+
+async function evaluateIncidents(websiteIds: string[]) {
+  for (const websiteId of websiteIds) {
+    try {
+      await evaluateIncidentForWebsite(websiteId);
+    } catch (err) {
+      console.error("[incident-eval]", websiteId, err);
+    }
+  }
 }
 
 const bulkUploadToDB = async (client: ReturnType<typeof createClient>) => {
@@ -63,6 +195,9 @@ const bulkUploadToDB = async (client: ReturnType<typeof createClient>) => {
       website_id: website.message.websiteId
     }))
   });
+
+  const websiteIds = Array.from(new Set(websites.map((website) => website.message.websiteId)));
+  await evaluateIncidents(websiteIds);
 
   const ids = websites.map((w) => w.id);
   if (ids.length) {

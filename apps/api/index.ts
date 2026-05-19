@@ -5,6 +5,7 @@ import {prisma} from "@repo/db"
 import { authMiddleware } from "./middleware";
 import type { Request, Response } from "express";
 import { isValidUrl } from "./utils";
+import { notifyIncidentResolved } from "./incidentNotify";
 
 const app = express();
 
@@ -103,6 +104,176 @@ app.get("/status/:websiteId", authMiddleware, async (req: Request, res: Response
 
     } catch (error) {
         console.error("[GET /status/:websiteId]", error);
+        res.status(500).json({ message: "Internal server error." });
+    }
+});
+
+// ─── list incidents for the authenticated user ─────────────────────────────
+app.get("/incidents", authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const incidents = await prisma.incident.findMany({
+            where: {
+                website: {
+                    user_id: req.user_id!
+                }
+            },
+            include: {
+                website: {
+                    select: { id: true, url: true }
+                }
+            },
+            orderBy: { created_at: "desc" }
+        });
+
+        res.json({ incidents });
+    } catch (error) {
+        console.error("[GET /incidents]", error);
+        res.status(500).json({ message: "Internal server error." });
+    }
+});
+
+// ─── incident detail ───────────────────────────────────────────────────────
+app.get("/incidents/:incidentId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const incidentId = Array.isArray(req.params.incidentId)
+            ? req.params.incidentId[0]!
+            : req.params.incidentId;
+
+        const incident = await prisma.incident.findFirst({
+            where: {
+                id: incidentId,
+                website: { user_id: req.user_id! }
+            },
+            include: {
+                website: { select: { id: true, url: true } },
+                events: { orderBy: { created_at: "desc" } }
+            }
+        });
+
+        if (!incident) {
+            res.status(404).json({ message: "Incident not found." });
+            return;
+        }
+
+        res.json({ incident });
+    } catch (error) {
+        console.error("[GET /incidents/:incidentId]", error);
+        res.status(500).json({ message: "Internal server error." });
+    }
+});
+
+// ─── acknowledge incident ──────────────────────────────────────────────────
+app.post("/incidents/:incidentId/ack", authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const incidentId = Array.isArray(req.params.incidentId)
+            ? req.params.incidentId[0]!
+            : req.params.incidentId;
+
+        const incident = await prisma.incident.findFirst({
+            where: {
+                id: incidentId,
+                website: { user_id: req.user_id! }
+            }
+        });
+
+        if (!incident) {
+            res.status(404).json({ message: "Incident not found." });
+            return;
+        }
+
+        if (incident.status === "Resolved") {
+            res.status(409).json({ message: "Incident already resolved." });
+            return;
+        }
+
+        const now = new Date();
+        const updated = await prisma.$transaction(async (tx) => {
+            const next = await tx.incident.update({
+                where: { id: incident.id },
+                data: {
+                    status: "Acknowledged",
+                    acknowledged_at: now
+                }
+            });
+
+            await tx.incidentEvent.create({
+                data: {
+                    incident_id: incident.id,
+                    type: "Acknowledged",
+                    message: "Acknowledged by operator",
+                    metadata: { user_id: req.user_id }
+                }
+            });
+
+            return next;
+        });
+
+        res.json({ incident: updated });
+    } catch (error) {
+        console.error("[POST /incidents/:incidentId/ack]", error);
+        res.status(500).json({ message: "Internal server error." });
+    }
+});
+
+// ─── resolve incident ──────────────────────────────────────────────────────
+app.post("/incidents/:incidentId/resolve", authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const incidentId = Array.isArray(req.params.incidentId)
+            ? req.params.incidentId[0]!
+            : req.params.incidentId;
+
+        const incident = await prisma.incident.findFirst({
+            where: {
+                id: incidentId,
+                website: { user_id: req.user_id! }
+            },
+            include: { website: { select: { url: true } } }
+        });
+
+        if (!incident) {
+            res.status(404).json({ message: "Incident not found." });
+            return;
+        }
+
+        if (incident.status === "Resolved") {
+            res.status(409).json({ message: "Incident already resolved." });
+            return;
+        }
+
+        const now = new Date();
+        const updated = await prisma.$transaction(async (tx) => {
+            const next = await tx.incident.update({
+                where: { id: incident.id },
+                data: {
+                    status: "Resolved",
+                    resolved_at: now
+                }
+            });
+
+            await tx.incidentEvent.create({
+                data: {
+                    incident_id: incident.id,
+                    type: "Resolved",
+                    message: "Resolved by operator",
+                    metadata: { user_id: req.user_id }
+                }
+            });
+
+            return next;
+        });
+
+        await notifyIncidentResolved({
+            incidentId: updated.id,
+            websiteId: updated.website_id,
+            websiteUrl: incident.website.url,
+            severity: updated.severity,
+            title: updated.title,
+            reason: "Resolved by operator",
+        });
+
+        res.json({ incident: updated });
+    } catch (error) {
+        console.error("[POST /incidents/:incidentId/resolve]", error);
         res.status(500).json({ message: "Internal server error." });
     }
 });

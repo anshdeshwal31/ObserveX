@@ -13,9 +13,9 @@ function formatPct(value: number) {
   return `${Math.round(value * 10) / 10}%`;
 }
 
-function avg(values: number[]) {
-  if (values.length === 0) return 0;
-  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+function formatTimestamp(timestamp: string) {
+  const iso = new Date(timestamp).toISOString();
+  return iso.replace("T", " ").replace("Z", " UTC");
 }
 
 function p95(values: number[]) {
@@ -137,7 +137,24 @@ export default function DashboardPage() {
     return Object.values(details).flatMap((site) => site.ticks);
   }, [details]);
 
+  const allLatencies = useMemo(
+    () => allTicks.filter((tick) => tick.response_time_ms >= 0).map((tick) => tick.response_time_ms),
+    [allTicks],
+  );
+
   const globalUptime = useMemo(() => uptimePct(allTicks), [allTicks]);
+  const globalP95 = useMemo(() => p95(allLatencies), [allLatencies]);
+  const lastIngestAt = useMemo(() => {
+    if (!allTicks.length) return null;
+    return allTicks.reduce((latest, tick) =>
+      new Date(tick.created_at).getTime() > new Date(latest.created_at).getTime() ? tick : latest,
+    ).created_at;
+  }, [allTicks]);
+  const activeRegions = useMemo(() => {
+    const regionSet = new Set<string>();
+    allTicks.forEach((tick) => regionSet.add(tick.region_id || "usa"));
+    return Array.from(regionSet.values());
+  }, [allTicks]);
 
   const ingressLogs = useMemo(() => {
     const entries = Object.values(details).flatMap((site) =>
@@ -172,13 +189,11 @@ export default function DashboardPage() {
             Mission Control
           </span>
           <h1 className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-[#f7f1e8]">SRE Command Center</h1>
-          <p className="mt-2 text-[#ece3d7bf]">Distributed uptime intelligence across multi-region ingestion.</p>
+          <p className="mt-2 text-[#ece3d7bf]">Multi-region ingestion, SLO posture, and broker telemetry at a glance.</p>
         </div>
         <StarBorder
           as="button"
           type="button"
-          color="#ffffff"
-          speed="6s"
           thickness={1}
           innerClassName="rounded-full bg-white/8 px-4 py-2 text-sm font-semibold text-[#f7f1e8]"
         >
@@ -196,12 +211,12 @@ export default function DashboardPage() {
           <p className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-[#f7f1e8]">{formatPct(globalUptime)}</p>
         </article>
         <article className="rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur-xl">
-          <h3 className="text-[11px] uppercase tracking-[0.14em] text-[#ece3d7bf]">Active Broker Nodes</h3>
-          <p className="mt-2 text-lg font-semibold text-[#f7f1e8]">2 Active Consumer Regions</p>
+          <h3 className="text-[11px] uppercase tracking-[0.14em] text-[#ece3d7bf]">P95 Ingest Latency</h3>
+          <p className="mt-2 text-lg font-semibold text-[#f7f1e8]">{allLatencies.length ? `${globalP95} ms` : "—"}</p>
         </article>
         <article className="rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur-xl">
-          <h3 className="text-[11px] uppercase tracking-[0.14em] text-[#ece3d7bf]">Broker Pipeline</h3>
-          <p className="mt-2 text-lg font-semibold text-[#f7f1e8]">Redis Streams (pingNova:website)</p>
+          <h3 className="text-[11px] uppercase tracking-[0.14em] text-[#ece3d7bf]">Last Ingest (UTC)</h3>
+          <p className="mt-2 text-lg font-semibold text-[#f7f1e8]">{lastIngestAt ? formatTimestamp(lastIngestAt) : "—"}</p>
         </article>
       </div>
 
@@ -218,9 +233,9 @@ export default function DashboardPage() {
                 <tr className="border-b border-white/10">
                   <th className="py-3 pr-3">Status</th>
                   <th className="py-3 pr-3">Monitored Endpoint</th>
-                  <th className="py-3 pr-3">Avg Latency</th>
                   <th className="py-3 pr-3">P95 Latency</th>
                   <th className="py-3 pr-3">Uptime %</th>
+                  <th className="py-3 pr-3">Last Check</th>
                   <th className="py-3">Action</th>
                 </tr>
               </thead>
@@ -242,10 +257,15 @@ export default function DashboardPage() {
                     const detail = details[website.id];
                     const ticks = detail?.ticks ?? [];
                     const latencies = ticks.filter((t) => t.response_time_ms >= 0).map((t) => t.response_time_ms);
-                    const avgLatency = latencies.length ? `${avg(latencies)} ms` : "— ms";
                     const p95Latency = latencies.length ? `${p95(latencies)} ms` : "— ms";
-                    const status = detail?.ticks?.[0]?.status ?? statuses[website.id]?.status ?? "Unknown";
+                    const lastTick = ticks.length
+                      ? ticks.reduce((latest, tick) =>
+                          new Date(tick.created_at).getTime() > new Date(latest.created_at).getTime() ? tick : latest,
+                        )
+                      : null;
+                    const status = lastTick?.status ?? statuses[website.id]?.status ?? "Unknown";
                     const uptimeValue = ticks.length ? formatPct(uptimePct(ticks)) : "—";
+                    const lastCheck = lastTick ? formatTimestamp(lastTick.created_at) : "—";
 
                     const badgeColor = status === "Up"
                       ? "border-[#f0cc9f55] text-[#f9e7cd]"
@@ -270,9 +290,9 @@ export default function DashboardPage() {
                         <td className="py-3 pr-3 max-w-[320px]">
                           <p className="truncate text-sm font-semibold text-[#f7f1e8]">{website.url}</p>
                         </td>
-                        <td className="py-3 pr-3 text-[#ece3d7bf]">{avgLatency}</td>
                         <td className="py-3 pr-3 text-[#ece3d7bf]">{p95Latency}</td>
                         <td className="py-3 pr-3 text-[#ece3d7bf]">{uptimeValue}</td>
+                        <td className="py-3 pr-3 text-[#ece3d7bf]">{lastCheck}</td>
                         <td className="py-3 text-[#f0cc9f]">
                           <Link href={`/website/${website.id}`} className="text-sm font-semibold hover:underline">
                             Inspect
@@ -301,8 +321,6 @@ export default function DashboardPage() {
                 as="button"
                 disabled={saving}
                 type="submit"
-                color="#f0cc9f"
-                speed="4.8s"
                 thickness={1}
                 innerClassName="rounded-full bg-[linear-gradient(130deg,#fff7ec,#f2d5b6_58%,#f1bd90)] px-5 py-3 text-sm font-semibold text-[#17120e]"
               >
@@ -313,27 +331,27 @@ export default function DashboardPage() {
           </article>
 
           <article className="rounded-2xl border border-white/12 bg-white/8 p-5 backdrop-blur-xl">
-            <h2 className="text-lg font-semibold text-[#f7f1e8]">Broker & Distributed Queue Telemetry</h2>
+            <h2 className="text-lg font-semibold text-[#f7f1e8]">Pipeline Telemetry</h2>
             <div className="mt-3 grid gap-2 text-sm text-[#ece3d7bf]">
-              <div className="flex items-center justify-between">
-                <span>Redis Engine</span>
-                <span className="text-[#f7f1e8]">v7.2 (Active)</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Active Group</span>
-                <span className="text-[#f7f1e8]">usa</span>
-              </div>
               <div className="flex items-center justify-between">
                 <span>Stream Broker</span>
                 <span className="text-[#f7f1e8]">pingNova:website</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Consumer Status</span>
-                <span className="text-[#f7f1e8]">us-1 (Healthy)</span>
+                <span>Consumer Group</span>
+                <span className="text-[#f7f1e8]">usa</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>ACK Status</span>
-                <span className="text-[#f7f1e8]">Synchronized (100%)</span>
+                <span>Active Regions</span>
+                <span className="text-[#f7f1e8]">{activeRegions.length ? activeRegions.join(", ") : "—"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Last Ingest</span>
+                <span className="text-[#f7f1e8]">{lastIngestAt ? formatTimestamp(lastIngestAt) : "—"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Events Ingested</span>
+                <span className="text-[#f7f1e8]">{allTicks.length}</span>
               </div>
             </div>
           </article>

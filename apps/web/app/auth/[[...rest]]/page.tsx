@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { SignIn, SignUp } from "@clerk/nextjs";
-import { StarBorder } from "../components/reactbits/star-border";
 
 type Mode = "signin" | "signup";
 

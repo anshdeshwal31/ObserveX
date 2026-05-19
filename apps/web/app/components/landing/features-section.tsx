@@ -5,7 +5,7 @@ import { AnimateIn } from "../animate-in";
 const features = [
   {
     title: "Global Checks",
-    desc: "Run uptime and latency checks from multiple regions with minute-level cadence.",
+    desc: "Run uptime and latency checks from multiple regions (default ~3-minute cadence).",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -16,7 +16,7 @@ const features = [
   },
   {
     title: "Fast Incident Context",
-    desc: "See the latest failures, response spikes, and status transitions without switching tools.",
+    desc: "Surface recent failures, response spikes, and status transitions in the dashboard and per-site trace logs for fast manual triage (automated incident grouping not yet implemented).",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -25,7 +25,7 @@ const features = [
   },
   {
     title: "Timeline Replay",
-    desc: "Inspect each tick's status, response time, and region to isolate noisy endpoints quickly.",
+    desc: "Inspect each tick's status, response time, and region (last 50 checks) to isolate noisy endpoints quickly.",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -35,7 +35,7 @@ const features = [
   },
   {
     title: "Actionable Dashboard",
-    desc: "Track active monitors, incident count, and recent checks from one command center.",
+    desc: "Track active monitors and recent checks from one control surface. Incident management (create/resolve) is a planned feature.",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="7" height="7" />
