@@ -20,6 +20,8 @@ export type WebsiteInfo = {
   url: string;
   user_id: string;
   time_added: string;
+  incident_open_after?: number | null;
+  incident_resolve_after?: number | null;
   ticks: WebsiteTick[];
 };
 
@@ -46,7 +48,14 @@ async function parseJson<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-export async function addWebsite(url: string, token: string): Promise<{ id: string }> {
+export async function addWebsite(
+  url: string,
+  token: string,
+  thresholds?: {
+    incident_open_after?: number | null;
+    incident_resolve_after?: number | null;
+  }
+): Promise<{ id: string }> {
   if (!token) throw new Error("You are not signed in.");
 
   const response = await fetch(`${API_BASE_URL}/website`, {
@@ -55,7 +64,10 @@ export async function addWebsite(url: string, token: string): Promise<{ id: stri
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({
+      url,
+      ...(thresholds ?? {}),
+    }),
   });
   return parseJson<{ id: string }>(response);
 }
@@ -85,4 +97,27 @@ export async function getWebsiteStatus(websiteId: string, token: string): Promis
 
   if (!data.websiteInfo) return null;
   return data.websiteInfo;
+}
+
+export async function updateWebsiteThresholds(
+  websiteId: string,
+  token: string,
+  thresholds: {
+    incident_open_after?: number | null;
+    incident_resolve_after?: number | null;
+  }
+): Promise<WebsiteInfo> {
+  if (!token) throw new Error("You are not signed in.");
+
+  const response = await fetch(`${API_BASE_URL}/website/${websiteId}/thresholds`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(thresholds),
+  });
+
+  const data = await parseJson<{ website: WebsiteInfo }>(response);
+  return data.website;
 }

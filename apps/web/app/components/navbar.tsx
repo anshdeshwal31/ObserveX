@@ -1,50 +1,106 @@
 
+"use client";
+
 import Link from "next/link";
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
-import { PillNav } from "./reactbits/pill-nav";
-import { StarBorder } from "./reactbits/star-border";
+import {
+  Navbar as ResizableNavbar,
+  NavBody,
+  NavItems,
+  MobileNav,
+  MobileNavHeader,
+  MobileNavToggle,
+  MobileNavMenu,
+  NavbarButton,
+} from "@/components/ui/resizable-navbar";
+import { useState } from "react";
 
 const navItems = [
-  { label: "Home", href: "/" },
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Monitors", href: "/dashboard" },
-  { label: "Features", href: "/#features" },
-  { label: "Pricing", href: "/#pricing" },
-  { label: "FAQ", href: "/#faq" },
+  { name: "Dashboard", link: "/dashboard" },
+  { name: "Monitor", link: "/monitor" },
+  { name: "Features", link: "/#features" },
+  { name: "Pricing", link: "/#pricing" },
+  { name: "FAQ", link: "/#faq" },
 ];
 
 export function Navbar() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   return (
-    <header className="sticky top-4 z-40 mx-auto flex w-[min(1220px,calc(100vw-32px))] items-center justify-center gap-3 px-1">
-      <PillNav
-        logo={undefined}
-        logoAlt="PingNova"
-        items={navItems}
-        activeHref="/"
-        baseColor="#f8fafc"
-        pillColor="rgba(9,9,11,0.72)"
-        hoveredPillTextColor="#ffffff"
-        pillTextColor="rgba(255,255,255,0.85)"
-        className="w-full justify-center"
-        initialLoadAnimation={false}
-        logoText="PingNova"
-      />
-      <SignedOut>
-        <StarBorder
-          as={Link}
-          href="/auth"
-          thickness={1}
-          className="shrink-0"
-          innerClassName="rounded-full bg-[#111113] px-4 py-2 text-sm font-semibold text-[#f7f1e8]"
-        >
-          Open App <span aria-hidden>→</span>
-        </StarBorder>
-      </SignedOut>
-      <SignedIn>
-        <div className="shrink-0 rounded-full bg-[#111113] p-1 border border-white/12">
-          <UserButton />
-        </div>
-      </SignedIn>
+    <header className="relative z-40 mx-auto flex w-[min(1220px,calc(100vw-32px))] items-start justify-between gap-3 px-1 pt-2">
+      <Link
+        href="/"
+        className="shrink-0 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-[#f7f1e8]"
+      >
+        PingNova
+      </Link>
+
+      <div className="flex w-full flex-1 justify-center">
+        <ResizableNavbar className="top-3">
+          <NavBody className="min-w-0">
+            <div className="hidden h-9 w-24 lg:block" aria-hidden="true" />
+            <NavItems items={navItems} />
+            <div className="hidden h-9 w-24 lg:block" aria-hidden="true" />
+          </NavBody>
+
+          <MobileNav>
+            <MobileNavHeader>
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white">
+                Menu
+              </span>
+              <MobileNavToggle
+                isOpen={isMobileMenuOpen}
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              />
+            </MobileNavHeader>
+
+            <MobileNavMenu
+              isOpen={isMobileMenuOpen}
+              onClose={() => setIsMobileMenuOpen(false)}
+            >
+              {navItems.map((item, idx) => (
+                <a
+                  key={`mobile-link-${idx}`}
+                  href={item.link}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="relative text-neutral-600 dark:text-neutral-300"
+                >
+                  <span className="block">{item.name}</span>
+                </a>
+              ))}
+              <SignedOut>
+                <NavbarButton
+                  as={Link}
+                  href="/auth"
+                  variant="primary"
+                  className="w-full"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  Open App
+                </NavbarButton>
+              </SignedOut>
+            </MobileNavMenu>
+          </MobileNav>
+        </ResizableNavbar>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <SignedOut>
+          <NavbarButton
+            as={Link}
+            href="/auth"
+            variant="secondary"
+            className="hidden lg:inline-flex"
+          >
+            Open App
+          </NavbarButton>
+        </SignedOut>
+        <SignedIn>
+          <div className="rounded-full border border-white/12 bg-[#111113] p-1">
+            <UserButton />
+          </div>
+        </SignedIn>
+      </div>
     </header>
   );
 }

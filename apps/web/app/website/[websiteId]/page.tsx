@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { getWebsiteStatus, type WebsiteInfo, type WebsiteTick } from "../../../lib/api";
+import { getWebsiteStatus, updateWebsiteThresholds, type WebsiteInfo, type WebsiteTick } from "../../../lib/api";
 
 type TabKey = "regional" | "http" | "logs";
 
@@ -69,6 +69,10 @@ export default function WebsiteDetailPage() {
   const [website, setWebsite] = useState<WebsiteInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("regional");
+  const [openAfter, setOpenAfter] = useState("");
+  const [resolveAfter, setResolveAfter] = useState("");
+  const [savingThresholds, setSavingThresholds] = useState(false);
+  const [thresholdMessage, setThresholdMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoaded || !userId || !websiteId) return;
@@ -89,6 +93,12 @@ export default function WebsiteDetailPage() {
 
     void load();
   }, [isLoaded, userId, websiteId, getToken]);
+
+  useEffect(() => {
+    if (!website) return;
+    setOpenAfter(website.incident_open_after?.toString() ?? "");
+    setResolveAfter(website.incident_resolve_after?.toString() ?? "");
+  }, [website]);
 
   const ticks = website?.ticks ?? [];
   const latencies = useMemo(() => ticks.filter((t) => t.response_time_ms >= 0).map((t) => t.response_time_ms), [ticks]);
@@ -146,6 +156,43 @@ export default function WebsiteDetailPage() {
       });
   }, [ticks, website?.url]);
 
+  async function saveThresholds(nextOpen: string, nextResolve: string) {
+    const token = await getToken();
+    if (!token) {
+      setThresholdMessage("Authentication failed.");
+      return;
+    }
+
+    const openValue = nextOpen.trim() === "" ? null : Number(nextOpen);
+    const resolveValue = nextResolve.trim() === "" ? null : Number(nextResolve);
+
+    if (openValue !== null && !Number.isInteger(openValue)) {
+      setThresholdMessage("Open-after must be an integer.");
+      return;
+    }
+
+    if (resolveValue !== null && !Number.isInteger(resolveValue)) {
+      setThresholdMessage("Resolve-after must be an integer.");
+      return;
+    }
+
+    setSavingThresholds(true);
+    setThresholdMessage(null);
+
+    try {
+      const updated = await updateWebsiteThresholds(websiteId, token, {
+        incident_open_after: openValue,
+        incident_resolve_after: resolveValue,
+      });
+      setWebsite((prev) => (prev ? { ...prev, ...updated } : updated));
+      setThresholdMessage("Thresholds saved.");
+    } catch (err) {
+      setThresholdMessage(err instanceof Error ? err.message : "Failed to save thresholds.");
+    } finally {
+      setSavingThresholds(false);
+    }
+  }
+
   if (loading) {
     return (
       <section className="space-y-4 p-6 md:p-8">
@@ -162,8 +209,8 @@ export default function WebsiteDetailPage() {
   if (error) {
     return (
       <section className="space-y-4 p-6 md:p-8">
-        <Link href="/dashboard" className="inline-flex text-sm text-[#ece3d7bf] hover:text-[#f7f1e8]">
-          ← Back to Dashboard
+        <Link href="/monitor" className="inline-flex text-sm text-[#ece3d7bf] hover:text-[#f7f1e8]">
+          ← Back to Monitor
         </Link>
         <article className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
           <h2 className="text-2xl font-semibold text-[#f7f1e8]">Could not load website details</h2>
@@ -176,8 +223,8 @@ export default function WebsiteDetailPage() {
   if (!website) {
     return (
       <section className="space-y-4 p-6 md:p-8">
-        <Link href="/dashboard" className="inline-flex text-sm text-[#ece3d7bf] hover:text-[#f7f1e8]">
-          ← Back to Dashboard
+        <Link href="/monitor" className="inline-flex text-sm text-[#ece3d7bf] hover:text-[#f7f1e8]">
+          ← Back to Monitor
         </Link>
         <article className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
           <h2 className="text-2xl font-semibold text-[#f7f1e8]">Monitoring will begin shortly</h2>
@@ -192,8 +239,8 @@ export default function WebsiteDetailPage() {
 
   return (
     <section className="space-y-5 p-6 md:p-8">
-      <Link href="/dashboard" className="inline-flex text-sm text-[#ece3d7bf] hover:text-[#f7f1e8]">
-        ← Back to Dashboard
+      <Link href="/monitor" className="inline-flex text-sm text-[#ece3d7bf] hover:text-[#f7f1e8]">
+        ← Back to Monitor
       </Link>
 
       <header className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
@@ -241,6 +288,70 @@ export default function WebsiteDetailPage() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-semibold text-[#f7f1e8]">Incident thresholds</h2>
+            <p className="mt-1 text-sm text-[#ece3d7bf]">Defaults: open after 3 downs, resolve after 2 ups.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setOpenAfter("");
+              setResolveAfter("");
+              void saveThresholds("", "");
+            }}
+            className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-[#f7f1e8]"
+            disabled={savingThresholds}
+          >
+            Use defaults
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="block text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">
+              Open after (Down)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={openAfter}
+              onChange={(event) => setOpenAfter(event.target.value)}
+              placeholder="3"
+              className="mt-2 w-full rounded-2xl border border-white/12 bg-[#0d0d0d] px-4 py-3 text-sm text-[#f7f1e8] placeholder:text-[#ece3d7a0] focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs uppercase tracking-[0.12em] text-[#ece3d7bf]">
+              Resolve after (Up)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={resolveAfter}
+              onChange={(event) => setResolveAfter(event.target.value)}
+              placeholder="2"
+              className="mt-2 w-full rounded-2xl border border-white/12 bg-[#0d0d0d] px-4 py-3 text-sm text-[#f7f1e8] placeholder:text-[#ece3d7a0] focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void saveThresholds(openAfter, resolveAfter)}
+            className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-[#f7f1e8] transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={savingThresholds}
+          >
+            {savingThresholds ? "Saving..." : "Save thresholds"}
+          </button>
+          {thresholdMessage && <span className="text-xs text-[#f0cc9f]">{thresholdMessage}</span>}
+        </div>
       </section>
 
       <section className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">

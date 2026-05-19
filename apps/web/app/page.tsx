@@ -1,4 +1,3 @@
-import { BrandStrip } from "./components/landing/brand-strip";
 import { FaqSection } from "./components/landing/faq-section";
 import { FeaturesSection } from "./components/landing/features-section";
 import { Footer } from "./components/landing/footer";
