@@ -121,3 +121,46 @@ export async function updateWebsiteThresholds(
   const data = await parseJson<{ website: WebsiteInfo }>(response);
   return data.website;
 }
+
+export type Incident = {
+  id: string;
+  website_id: string;
+  status: "Open" | "Acknowledged" | "Resolved";
+  severity: "Critical" | "High" | "Medium" | "Low";
+  title: string;
+  created_at: string;
+  resolved_at?: string;
+  events?: IncidentEvent[];
+};
+
+export type IncidentEvent = {
+  id: string;
+  type: string;
+  message: string;
+  metadata?: any;
+  created_at: string;
+};
+
+export async function getIncidents(token: string): Promise<Incident[]> {
+  if (!token) throw new Error("You are not signed in.");
+
+  const response = await fetch(`${API_BASE_URL}/incidents`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const data = await parseJson<{ incidents: Incident[] }>(response);
+  return data.incidents;
+}
+
+export async function getIncidentDetails(incidentId: string, token: string): Promise<Incident> {
+  if (!token) throw new Error("You are not signed in.");
+
+  const response = await fetch(`${API_BASE_URL}/incidents/${incidentId}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const data = await parseJson<{ incident: Incident }>(response);
+  return data.incident;
+}

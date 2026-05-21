@@ -60,7 +60,7 @@ export function FeaturesSection() {
       </header>
       <div className="grid gap-4 md:grid-cols-2">
         {features.map((f, i) => (
-          <article className="rounded-[20px] border border-white/10 bg-white/6 p-6 backdrop-blur-xl">
+          <article key={i} className="rounded-[20px] border border-white/10 bg-white/6 p-6 backdrop-blur-xl">
             <div className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-white/10 text-[#f0cc9f]">
               {f.icon}
             </div>

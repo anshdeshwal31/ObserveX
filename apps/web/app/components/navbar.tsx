@@ -27,17 +27,20 @@ export function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <header className="relative z-40 mx-auto flex w-[min(1220px,calc(100vw-32px))] items-start justify-between gap-3 px-1 pt-2">
+    <header className="relative z-40 mx-auto flex w-[min(1220px,calc(100vw-32px))] items-center justify-between gap-3 px-1 pt-2">
       <Link
         href="/"
-        className="shrink-0 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-[#f7f1e8]"
+        className="flex items-center gap-2 shrink-0 px-2 text-sm font-semibold tracking-wide text-[#f7f1e8] hover:opacity-80 transition-opacity"
       >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#f27e70]">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+        </svg>
         PingNova
       </Link>
 
       <div className="flex w-full flex-1 justify-center">
         <ResizableNavbar className="top-3">
-          <NavBody className="min-w-0">
+          <NavBody className="min-w-0 bg-[#0d0d0d] border border-white/10 shadow-lg rounded-[24px]">
             <div className="hidden h-9 w-24 lg:block" aria-hidden="true" />
             <NavItems items={navItems} />
             <div className="hidden h-9 w-24 lg:block" aria-hidden="true" />

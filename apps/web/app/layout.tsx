@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Manrope } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Navbar } from "./components/navbar";
+import { Footer } from "./components/footer";
 import "./globals.css";
 
 const displayFont = Manrope({
@@ -48,6 +49,7 @@ export default function RootLayout({
               />
               <div className="relative z-10">{children}</div>
             </main>
+            <Footer />
           </div>
         </body>
       </html>

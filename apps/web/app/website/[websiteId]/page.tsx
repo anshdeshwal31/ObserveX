@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { getWebsiteStatus, updateWebsiteThresholds, type WebsiteInfo, type WebsiteTick } from "../../../lib/api";
+import { getWebsiteStatus, updateWebsiteThresholds, getIncidents, getIncidentDetails, type WebsiteInfo, type WebsiteTick, type Incident, type IncidentEvent } from "../../../lib/api";
 
 type TabKey = "regional" | "http" | "logs";
 
@@ -73,6 +73,17 @@ export default function WebsiteDetailPage() {
   const [resolveAfter, setResolveAfter] = useState("");
   const [savingThresholds, setSavingThresholds] = useState(false);
   const [thresholdMessage, setThresholdMessage] = useState<string | null>(null);
+  const [activeIncident, setActiveIncident] = useState<Incident | null>(null);
+  const [aiReportEvent, setAiReportEvent] = useState<IncidentEvent | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyReport = () => {
+    const text = aiReportEvent?.metadata?.rca_report || "";
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   useEffect(() => {
     if (!isLoaded || !userId || !websiteId) return;
@@ -83,6 +94,31 @@ export default function WebsiteDetailPage() {
         if (token) {
           const result = await getWebsiteStatus(websiteId, token);
           setWebsite(result);
+          
+          try {
+            const allIncidents = await getIncidents(token);
+            const siteIncidents = allIncidents.filter(i => i.website_id === websiteId);
+            const latestOpen = siteIncidents.find(i => i.status === "Open" || i.status === "Acknowledged");
+            
+            if (latestOpen) {
+              const fullIncident = await getIncidentDetails(latestOpen.id, token);
+              setActiveIncident(fullIncident);
+              
+              const rcaEvent = fullIncident.events?.find(
+                (e) => e.message === "AIOps Root Cause Analysis Report" && e.metadata?.rca_report
+              );
+              if (rcaEvent) {
+                setAiReportEvent(rcaEvent);
+              } else {
+                const failEvent = fullIncident.events?.find(
+                  (e) => e.message === "AIOps Root Cause Analysis Failed"
+                );
+                if (failEvent) setAiReportEvent(failEvent);
+              }
+            }
+          } catch (incErr) {
+            console.error("Failed to load incidents:", incErr);
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to fetch website data.");
@@ -246,9 +282,17 @@ export default function WebsiteDetailPage() {
       <header className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <span className="inline-flex rounded-full border border-white/12 bg-white/6 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[#ece3d7c7]">
-              Endpoint Instance
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex rounded-full border border-white/12 bg-white/6 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[#ece3d7c7]">
+                Endpoint Instance
+              </span>
+              {activeIncident && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />
+                  Active Incident: Endpoint Down
+                </span>
+              )}
+            </div>
             <h1 className="mt-3 break-all text-3xl font-semibold tracking-[-0.03em] text-[#f7f1e8] md:text-4xl">{website.url}</h1>
             <p className="mt-1 text-sm text-[#ece3d7bf]">Endpoint ID: {website.id}</p>
           </div>
@@ -273,6 +317,7 @@ export default function WebsiteDetailPage() {
         </div>
       </header>
 
+
       <section className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
         <h2 className="text-xl font-semibold text-[#f7f1e8]">Ingress Latency Window (Last 40 checks)</h2>
         {ticks.length === 0 ? (
@@ -289,6 +334,76 @@ export default function WebsiteDetailPage() {
           </>
         )}
       </section>
+
+      {activeIncident && (
+        <section className="rounded-[20px] border border-[#f27e70]/30 bg-[#120a0a] p-6 backdrop-blur-xl shadow-[0_0_20px_rgba(242,126,112,0.1)]">
+          <div className="flex items-center gap-3 border-b border-[#f27e70]/20 pb-4">
+            <span className="flex h-3 w-3 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f27e70] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-[#f27e70]"></span>
+            </span>
+            <h2 className="text-xl font-bold text-[#f7f1e8]">AI Root Cause Analysis (AIOps)</h2>
+            <span className="ml-auto inline-flex items-center rounded-md bg-[#f27e70]/10 px-2 py-1 text-xs font-medium text-[#f27e70] ring-1 ring-inset ring-[#f27e70]/20">
+              Active Incident: {activeIncident.id.slice(0, 8)}
+            </span>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-xl bg-[#0b0b0b] font-mono shadow-inner border border-white/5">
+            <div className="flex items-center justify-between bg-[#1a1a1a] px-4 py-2 border-b border-white/5">
+              <div className="flex items-center gap-3">
+                <div className="flex space-x-2">
+                  <div className="h-3 w-3 rounded-full bg-[#f27e70]"></div>
+                  <div className="h-3 w-3 rounded-full bg-[#f0cc9f]"></div>
+                  <div className="h-3 w-3 rounded-full bg-[#a1eaa4]"></div>
+                </div>
+                <p className="text-[10px] text-[#9b9487]">sre-agent@pingnova ~ diagnostic-report</p>
+              </div>
+              {aiReportEvent?.metadata?.rca_report && (
+                <button
+                  onClick={handleCopyReport}
+                  className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-[#ece3d7bf] transition hover:bg-white/10 hover:text-[#f7f1e8]"
+                >
+                  {copied ? (
+                    <>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a1eaa4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                      Copy Report
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+            <div className="p-5 text-sm text-[#ece3d7bf] overflow-x-auto">
+              <pre className="whitespace-pre-wrap font-mono leading-relaxed">
+                {aiReportEvent ? (
+                  aiReportEvent.message === "AIOps Root Cause Analysis Failed" ? (
+                    <span className="text-[#f27e70]">
+                      [❌] AIOps Diagnostics Failed: {aiReportEvent.metadata?.error || "Unknown Error"}
+                      {"\n\n"}Please verify that both GROQ_API_KEY and GEMINI_API_KEY are configured correctly in apps/consumer/.env and that your background worker (bulkUploadConsumer) is running.
+                    </span>
+                  ) : (
+                    (aiReportEvent.metadata?.rca_report || "")
+                      .replace(/### 🚨/g, "\n[🚨]")
+                      .replace(/### 🔍/g, "\n[🔍]")
+                      .replace(/### 🛠️/g, "\n[🛠️]")
+                      .replace(/\*\*(.*?)\*\*/g, '$1')
+                      .replace(/```[a-z]*\n([\s\S]*?)```/g, '$1')
+                  )
+                ) : (
+                  <span className="flex items-center gap-3 text-[#f0cc9f] animate-pulse">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-[#f27e70]" />
+                    Analyzing outage... Running background diagnostic probe & generating SRE Root Cause Analysis report via LLM. This should take 5-10 seconds.
+                  </span>
+                )}
+              </pre>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-[20px] border border-white/12 bg-white/8 p-6 backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-2">

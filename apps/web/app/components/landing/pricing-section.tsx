@@ -44,6 +44,7 @@ export function PricingSection() {
       <div className="grid gap-4 md:grid-cols-3">
         {plans.map((plan, i) => (
           <article
+            key={i}
             className={`rounded-[20px] border p-6 backdrop-blur-xl ${
               plan.highlighted
                 ? "border-[#f0cc9f66] bg-[#f0cc9f14]"

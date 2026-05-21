@@ -21,7 +21,7 @@ export function WorkflowSection() {
       </header>
       <div className="grid gap-4 md:grid-cols-3">
         {steps.map((step, i) => (
-          <div className="relative">
+          <div key={i} className="relative">
             <article className="rounded-[20px] border border-white/10 bg-white/6 p-6 backdrop-blur-xl">
               <span className="inline-flex rounded-full border border-[#f0cc9f55] bg-[#f0cc9f1a] px-2.5 py-1 text-xs font-semibold text-[#f0cc9f]">
                 {step.num}

@@ -1,6 +1,7 @@
 import { createClient } from "redis";
 import { prisma } from "@repo/db";
 import { notifyIncidentOpened, notifyIncidentResolved } from "./incidentNotify";
+import { runAIOpsRCA } from "./rcaService";
 
 const STREAM_KEY = "pingNova:websiteResponse";
 const GROUP_NAME = "usa";
@@ -124,6 +125,9 @@ async function evaluateIncidentForWebsite(websiteId: string) {
       title: incident.title,
       reason,
     });
+
+    // Fire and forget: run AI Root Cause Analysis asynchronously
+    runAIOpsRCA(incident.id, websiteUrl, websiteId).catch(console.error);
 
     return;
   }
