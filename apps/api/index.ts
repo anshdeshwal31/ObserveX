@@ -38,16 +38,20 @@ function parseThreshold(value: unknown) {
 }
 
 // CORS — allow requests from the frontend origin
+const rawFrontendUrl = process.env.FRONTEND_URL || "";
+const cleanFrontendUrl = rawFrontendUrl.endsWith("/") ? rawFrontendUrl.slice(0, -1) : rawFrontendUrl;
+
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
+  cleanFrontendUrl,
   "http://localhost:3000",
   "http://localhost:3001",
-  "https://app1.theansh.site"
+  "https://app1.theansh.site",
+  "https://ping-nova-web.vercel.app"
 ].filter(Boolean) as string[];
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.startsWith("https://app1.theansh.site")) {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.startsWith("https://app1.theansh.site") || origin.startsWith("https://ping-nova-web.vercel.app")) {
             callback(null, true);
         } else {
             callback(new Error(`Not allowed by CORS: ${origin}`));
