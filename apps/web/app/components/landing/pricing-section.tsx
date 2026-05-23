@@ -7,26 +7,18 @@ const plans = [
     name: "Starter",
     price: "$0",
     period: "/month",
-    features: ["Up to 5 websites", "Basic status timeline", "Community support", "1 region"],
-    highlighted: false,
+    features: ["Up to 50 websites", "1 minute check intervals", "Full status timeline", "Global regions support", "Email incident alerts"],
+    highlighted: true,
     cta: "Start Free",
   },
   {
     name: "Pro",
     price: "$29",
     period: "/month",
-    features: ["Up to 100 websites", "Advanced tick history", "Priority support", "4 regions", "Incident alerts"],
-    highlighted: true,
-    cta: "Get Started",
-    badge: "Most Popular",
-  },
-  {
-    name: "Scale",
-    price: "Custom",
-    period: "",
-    features: ["Unlimited websites", "Dedicated throughput", "Custom SLAs", "All regions", "SSO & SAML"],
+    features: ["Unlimited websites", "Advanced tick history", "Priority support", "Custom integrations", "SMS & Webhook alerts"],
     highlighted: false,
-    cta: "Contact Sales",
+    cta: "Coming Soon",
+    badge: "In Development",
   },
 ];
 
@@ -41,7 +33,7 @@ export function PricingSection() {
           Simple Plans, Serious Monitoring
         </h2>
       </header>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 max-w-4xl mx-auto">
         {plans.map((plan, i) => (
           <article
             key={i}

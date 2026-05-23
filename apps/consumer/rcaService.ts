@@ -76,10 +76,11 @@ export async function performDiagnostics(urlStr: string) {
   return result;
 }
 
-async function callGroqAPI(prompt: string): Promise<string> {
+async function callGroqAPI(prompt: string, model = "llama3-8b-8192"): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("GROQ_API_KEY missing");
+  if (!apiKey) throw new Error("GROQ_API_KEY missing from environment variables");
 
+  console.log(`[AIOps] Calling Groq (${model})...`);
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -87,35 +88,49 @@ async function callGroqAPI(prompt: string): Promise<string> {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: "llama3-8b-8192",
-      messages: [{ role: "user", content: prompt }]
+      model,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 1024
     })
   });
 
   if (!res.ok) {
-    throw new Error(`Groq error: ${res.status} ${await res.text()}`);
+    const body = await res.text();
+    throw new Error(`Groq/${model} error ${res.status}: ${body}`);
   }
   const data = await res.json();
   return data.choices[0].message.content;
 }
 
-async function callFallbackLLM(prompt: string): Promise<string> {
-  // Using Gemini API as fallback
+async function callGeminiAPI(prompt: string, model = "gemini-2.0-flash-lite"): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY missing");
+  if (!apiKey) throw new Error("GEMINI_API_KEY missing from environment variables");
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }]
-    })
-  });
+  console.log(`[AIOps] Calling Gemini (${model})...`);
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    }
+  );
 
   if (!res.ok) {
-    throw new Error(`Gemini error: ${res.status} ${await res.text()}`);
+    const body = await res.text();
+    // For rate limit errors, parse the retry delay and throw a special error
+    if (res.status === 429) {
+      let retryAfterSecs = 60;
+      try {
+        const parsed = JSON.parse(body);
+        const retryInfo = parsed?.error?.details?.find((d: any) => d["@type"]?.includes("RetryInfo"));
+        if (retryInfo?.retryDelay) {
+          retryAfterSecs = parseInt(retryInfo.retryDelay) || 60;
+        }
+      } catch {}
+      throw new Error(`Gemini/${model} rate limited (429) — retry after ${retryAfterSecs}s`);
+    }
+    throw new Error(`Gemini/${model} error ${res.status}: ${body}`);
   }
   const data = await res.json();
   return data.candidates[0].content.parts[0].text;
@@ -143,13 +158,28 @@ Step-by-step instructions for a developer/sysadmin to investigate and fix the is
 Keep the tone highly technical, concise, and professional. Output ONLY the markdown report.
 `;
 
-  try {
-    return await callGroqAPI(prompt);
-  } catch (err) {
-    console.error("[AIOps] Groq API failed, falling back to Gemini:", err);
-    return await callFallbackLLM(prompt);
+  // 4-model cascade — tries each in order, logs which one succeeds/fails
+  const models: Array<() => Promise<string>> = [
+    () => callGroqAPI(prompt, "llama3-8b-8192"),
+    () => callGroqAPI(prompt, "mixtral-8x7b-32768"),
+    () => callGeminiAPI(prompt, "gemini-2.0-flash-lite"),
+    () => callGeminiAPI(prompt, "gemini-1.5-flash-8b"),
+  ];
+
+  let lastError: unknown;
+  for (const callModel of models) {
+    try {
+      const result = await callModel();
+      console.log("[AIOps] ✅ RCA report generated successfully.");
+      return result;
+    } catch (err) {
+      console.error("[AIOps] Model failed, trying next:", (err as Error).message);
+      lastError = err;
+    }
   }
+  throw new Error(`All LLM models failed. Last error: ${(lastError as Error).message}`);
 }
+
 
 export async function runAIOpsRCA(incidentId: string, websiteUrl: string, websiteId: string) {
   try {

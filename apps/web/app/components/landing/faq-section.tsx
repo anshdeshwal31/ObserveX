@@ -8,8 +8,6 @@ const faqs = [
   { q: "Can I view historical status?", a: "Yes. Website detail pages show recent checks with full response-time and region context for each tick." },
   { q: "Do I need to install anything?", a: "No agent install is required. PingNova monitors via standard HTTP checks from our distributed infrastructure." },
   { q: "Is this suitable for production systems?", a: "Absolutely — that is the primary use case. Configure check intervals and alerting to match your SLA requirements." },
-  { q: "What regions are supported?", a: "We currently support 4 monitoring regions with plans to expand. Pro and Scale plans unlock all available regions." },
-  { q: "Can I export my monitoring data?", a: "Yes, all tick data is accessible via the API. Export as JSON for integration with your existing observability stack." },
 ];
 
 function FaqItem({ q, a, index }: { q: string; a: string; index: number }) {
